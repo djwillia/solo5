@@ -44,6 +44,17 @@ static inline uint32_t ukvm_ptr(volatile void *p) {
 	return (uint32_t)((uint64_t)p & 0xffffffff);
 }
 
+struct ukvm_module {
+    int (*handle_exit)(struct kvm_run *run, int vcpufd, uint8_t *mem);
+    int (*handle_cmdarg)(char *cmdarg);
+    int (*setup)(int vcpufd);
+    char *(*usage)(void);
+};
+
+extern struct ukvm_module ukvm_disk;
+extern struct ukvm_module ukvm_net;
+
+
 #define UKVM_PORT_CHAR      0x3f8
 #define UKVM_PORT_PUTS      0x499
 #define UKVM_PORT_NANOSLEEP 0x500
@@ -157,6 +168,5 @@ struct ukvm_netread {
 	/* OUT */
 	int ret;
 };
-
 
 #endif

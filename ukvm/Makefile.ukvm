@@ -1,0 +1,8 @@
+UKVM_MODULE_FILES= \
+ukvm-disk.c \
+ukvm-net.c \
+
+UKVM_MODULE_FLAGS= \
+-DUKVM_MODULE_DISK \
+-DUKVM_MODULE_NET \
+
