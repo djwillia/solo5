@@ -42,11 +42,6 @@
 #include <signal.h>
 #include <pthread.h>
 
-/* for gdb-chain */
-#include "gdb-chain.h"
-static int gfd;
-static const char *gdbchain;
-
 #include "processor-flags.h"
 #include "../kernel/interrupts.h"
 #include "ukvm.h"
@@ -58,6 +53,12 @@ struct ukvm_module *modules[] = {
 #endif
 #ifdef UKVM_MODULE_DISK
     &ukvm_net,
+#endif
+#ifdef UKVM_MODULE_CHAIN
+    &ukvm_chain,
+#endif
+#ifdef UKVM_MODULE_GDB
+    &ukvm_gdb,
 #endif
 };
 #define NUM_MODULES (sizeof(modules) / sizeof(struct ukvm_module *))
@@ -214,12 +215,6 @@ struct _kvm_segment {
 #define KVM_32BIT_MAX_MEM_SIZE  (1ULL << 32)
 #define KVM_32BIT_GAP_SIZE    (768 << 20)
 #define KVM_32BIT_GAP_START    (KVM_32BIT_MAX_MEM_SIZE - KVM_32BIT_GAP_SIZE)
-
-void gdb_stub_start();
-void gdb_handle_exception(int vcpufd, int sig);
-int gdb_is_pc_breakpointing(long addr);
-
-
 
 void boot_area_prep(uint8_t *mem,
                     uint64_t size,
@@ -760,60 +755,6 @@ void ukvm_port_dbg_stack(uint8_t *mem, int vcpufd){
 }
 
 
-void ukvm_port_getval(uint8_t * mem, void *data)
-{
-    uint32_t mem_off = *(uint32_t *) data;
-    struct ukvm_getval *p = (struct ukvm_getval *) (mem + mem_off);
-    int ret;
-    struct sockaddr_un addr;
-    char buf[GDB_CHAIN_BUF_LEN];
-        
-    memset(buf, 0, GDB_CHAIN_BUF_LEN);
-    
-    gfd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if ( gfd < 0 ) {
-        perror("Socket fd");
-        exit(1);
-    }
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, gdbchain, sizeof(addr.sun_path) - 1);
-
-    if ( connect(gfd, (struct sockaddr *)&addr, sizeof(addr)) ) {
-        perror("connect");
-        exit(1);
-    }
-
-    printf("Reading from %s\n", gdbchain);
-    ret = read(gfd, buf, sizeof(buf) - 1);
-    if ( ret <= 0 ) {
-        perror("Read error");
-        exit(1);
-    }
-    
-    p->value = strtoull(buf, NULL, 10);
-    printf("Got %ld\n", p->value);
-}
-void ukvm_port_putval(uint8_t * mem, void *data) {
-    uint32_t mem_off = *(uint32_t *) data;
-    struct ukvm_putval *p = (struct ukvm_putval *) (mem + mem_off);
-    char buf[GDB_CHAIN_BUF_LEN];
-    int ret;
-    int len;
-    
-    memset(buf, 0, GDB_CHAIN_BUF_LEN);
-    len = snprintf(buf, GDB_CHAIN_BUF_LEN, "%ld", p->value);
-    if ( len > GDB_CHAIN_BUF_LEN )
-        len = GDB_CHAIN_BUF_LEN;
-    
-    ret = write(gfd, buf, len);
-    if ( ret != len ) {
-        perror("Write error");
-        exit(1);
-    }
-}
-
 static int vcpu_loop(struct kvm_run *run, int vcpufd, uint8_t *mem)
 {
     int ret;
@@ -828,12 +769,6 @@ static int vcpu_loop(struct kvm_run *run, int vcpufd, uint8_t *mem)
         }
         
         switch (run->exit_reason) {
-        case KVM_EXIT_DEBUG: {
-            struct kvm_debug_exit_arch *arch_info = &run->debug.arch;
-            if (gdb_is_pc_breakpointing(arch_info->pc))
-                gdb_handle_exception(vcpufd, 1);
-            break;
-        }
         case KVM_EXIT_HLT: {
             puts("KVM_EXIT_HLT");
             //get_and_dump_sregs(vcpufd);
@@ -853,12 +788,6 @@ static int vcpu_loop(struct kvm_run *run, int vcpufd, uint8_t *mem)
                 break;
             case UKVM_PORT_DBG_STACK:
                 ukvm_port_dbg_stack(mem, vcpufd);
-                break;
-            case UKVM_PORT_GETVAL:
-                ukvm_port_getval(mem, data);
-                break;
-            case UKVM_PORT_PUTVAL:
-                ukvm_port_putval(mem, data);
                 break;
             default:
                 errx(1, "unhandled KVM_EXIT_IO (%x)", run->io.port);
@@ -912,7 +841,6 @@ int main(int argc, char **argv)
     size_t mmap_size;
     uint64_t elf_entry;
     uint64_t kernel_end;
-    int use_gdb = 0;
     int num_args = 0;
     int i;
     
@@ -941,13 +869,6 @@ int main(int argc, char **argv)
             if ( !modules[j]->handle_cmdarg(argv[i]) )
                 break;
     }
-
-#if 0
-    gdbchain = argv[3];
-    if (argc >= 6)
-        use_gdb = strcmp(argv[argc - 1], "--gdb") == 0;
-
-#endif
 
     kvm = open("/dev/kvm", O_RDWR | O_CLOEXEC);
     if (kvm == -1)
@@ -1053,22 +974,8 @@ int main(int argc, char **argv)
     if (ret)
         err(1, "couldn't create event thread");
 
-
     if ( setup_modules(vcpufd) )
         errx(1, "couldn't setup modules");
     
-    
-    if (use_gdb) {
-        // TODO check if we have the KVM_CAP_SET_GUEST_DEBUG capbility
-        struct kvm_guest_debug debug = {
-            .control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_SINGLESTEP,
-        };
-
-        if (ioctl(vcpufd, KVM_SET_GUEST_DEBUG, &debug) < 0)
-            printf("KVM_SET_GUEST_DEBUG failed");
-
-        gdb_stub_start(vcpufd);
-    }
-
     return vcpu_loop(run, vcpufd, mem);
 }

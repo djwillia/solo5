@@ -53,7 +53,8 @@ struct ukvm_module {
 
 extern struct ukvm_module ukvm_disk;
 extern struct ukvm_module ukvm_net;
-
+extern struct ukvm_module ukvm_chain;
+extern struct ukvm_module ukvm_gdb;
 
 #define UKVM_PORT_CHAR      0x3f8
 #define UKVM_PORT_PUTS      0x499

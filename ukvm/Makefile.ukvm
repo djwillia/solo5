@@ -1,8 +1,12 @@
 UKVM_MODULE_FILES= \
+ukvm-chain.c \
 ukvm-disk.c \
 ukvm-net.c \
+ukvm-gdb.c \
 
 UKVM_MODULE_FLAGS= \
+-DUKVM_MODULE_CHAIN \
 -DUKVM_MODULE_DISK \
 -DUKVM_MODULE_NET \
+-DUKVM_MODULE_GDB \
 

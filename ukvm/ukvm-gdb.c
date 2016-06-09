@@ -107,6 +107,7 @@
 
 #include "ukvm.h"
 
+static int use_gdb = 0;
 
 static int listen_socket_fd;
 static int socket_fd;
@@ -178,19 +179,6 @@ static void wait_for_connect(int portn)
     int ip = sockaddr.sin_addr.s_addr;
     printf("GDB Connected to %d.%d.%d.%d\n", ip & 0xff, (ip >> 8) & 0xff,
            (ip >> 16) & 0xff, (ip >> 24) & 0xff);
-}
-
-
-void gdb_handle_exception(int, int);
-
-void gdb_stub_start(int vcpufd)
-{
-    int i;
-    for (i = 0; i < MAX_BREAKPOINTS; i++)
-        breakpoints[i] = 0;
-
-    wait_for_connect(1234);
-    gdb_handle_exception(vcpufd, 0);
 }
 
 
@@ -456,7 +444,7 @@ static int hexToLong(char **ptr, long *longValue)
 }
 
 
-int gdb_is_pc_breakpointing(uint64_t addr)
+static int gdb_is_pc_breakpointing(uint64_t addr)
 {
     int i;
 
@@ -495,7 +483,7 @@ int gdb_remove_breakpoint(uint64_t addr)
 }
 
 
-void gdb_handle_exception(int vcpufd, int sig)
+static void gdb_handle_exception(int vcpufd, int sig)
 {
     char *buffer;
     char obuf[4096];
@@ -632,3 +620,65 @@ void gdb_handle_exception(int vcpufd, int sig)
 
     return;
 }
+
+static void gdb_stub_start(int vcpufd)
+{
+    int i;
+    for (i = 0; i < MAX_BREAKPOINTS; i++)
+        breakpoints[i] = 0;
+
+    wait_for_connect(1234);
+    gdb_handle_exception(vcpufd, 0);
+}
+
+
+
+static int handle_exit(struct kvm_run *run, int vcpufd, uint8_t *mem) {
+    struct kvm_debug_exit_arch *arch_info;
+    
+    if ( run->exit_reason != KVM_EXIT_DEBUG )
+        return -1;
+
+    arch_info = &run->debug.arch;
+    if (gdb_is_pc_breakpointing(arch_info->pc))
+        gdb_handle_exception(vcpufd, 1);
+
+    return 0;
+}
+
+static int setup(int vcpufd) {
+    if ( !use_gdb )
+        return 0;
+    
+    // TODO check if we have the KVM_CAP_SET_GUEST_DEBUG capbility
+    struct kvm_guest_debug debug = {
+        .control = KVM_GUESTDBG_ENABLE | KVM_GUESTDBG_SINGLESTEP,
+    };
+    
+    if (ioctl(vcpufd, KVM_SET_GUEST_DEBUG, &debug) < 0)
+        printf("KVM_SET_GUEST_DEBUG failed");
+    
+    gdb_stub_start(vcpufd);
+
+    return 0;
+}
+
+static int handle_cmdarg(char *cmdarg) {
+    if ( strncmp("--gdb", cmdarg, 5) )
+        return -1;
+
+    use_gdb = 1;
+
+    return 0;
+}
+
+static char *usage(void) {
+    return "--gdb";
+}
+
+struct ukvm_module ukvm_gdb = {
+    .handle_exit = handle_exit,
+    .handle_cmdarg = handle_cmdarg,
+    .setup = setup,
+    .usage = usage
+};
