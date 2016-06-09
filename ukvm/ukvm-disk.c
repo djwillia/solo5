@@ -9,6 +9,7 @@
 #include <assert.h>
 
 #include "ukvm.h"
+#include "ukvm_modules.h"
 
 static struct ukvm_blkinfo blkinfo;
 static char *diskfile;

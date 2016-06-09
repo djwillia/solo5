@@ -106,6 +106,7 @@
 #include <linux/kvm.h>
 
 #include "ukvm.h"
+#include "ukvm_modules.h"
 
 static int use_gdb = 0;
 

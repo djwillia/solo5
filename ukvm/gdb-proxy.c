@@ -105,9 +105,6 @@
 #include <assert.h>
 #include <linux/kvm.h>
 
-#include "ukvm.h"
-
-
 static int listen_socket_fd;
 static int socket_fd;
 static int stepping = 0;

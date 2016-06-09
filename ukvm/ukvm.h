@@ -34,27 +34,27 @@ struct ukvm_boot_arg_area {
     char *argv[UKVM_BOOT_ARG_NUM];
 };
 
+
+#ifndef __UKVM_HOST__
+#define S(x) #x
+#define S_(x) S(x)
+#define S__LINE__ S_(__LINE__)
+
 /* 
  * We can only send 32 bits via ports, so sending pointers will only
  * work for 32-bit addresses.  If we have unikernels with more than
  * 4GB of memory, we could be in trouble.
  */
 static inline uint32_t ukvm_ptr(volatile void *p) {
-	assert((((uint64_t)p) & 0xffffffff00000000) == 0);
+    if ((((uint64_t)p) & 0xffffffff00000000) != 0) {                                  char *panic = "PANIC:" __FILE__ ":" S__LINE__;               
+        int len = 0;                                                
+        while ( panic[len++] );                                     
+        solo5_console_write(panic, len);                            
+        solo5_exit();                                               
+    }                                                               
 	return (uint32_t)((uint64_t)p & 0xffffffff);
 }
-
-struct ukvm_module {
-    int (*handle_exit)(struct kvm_run *run, int vcpufd, uint8_t *mem);
-    int (*handle_cmdarg)(char *cmdarg);
-    int (*setup)(int vcpufd);
-    char *(*usage)(void);
-};
-
-extern struct ukvm_module ukvm_disk;
-extern struct ukvm_module ukvm_net;
-extern struct ukvm_module ukvm_chain;
-extern struct ukvm_module ukvm_gdb;
+#endif
 
 #define UKVM_PORT_CHAR      0x3f8
 #define UKVM_PORT_PUTS      0x499

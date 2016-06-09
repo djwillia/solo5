@@ -7,6 +7,7 @@
 #include <assert.h>
 
 #include "ukvm.h"
+#include "ukvm_modules.h"
 #include "gdb-chain.h"
 
 static int chainfd;

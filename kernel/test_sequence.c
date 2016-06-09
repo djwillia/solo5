@@ -1,4 +1,6 @@
-#include "ukvm/kernel.h"
+#include "solo5.h"
+#include "ukvm/ukvm.h"
+#include "ioport.h"
 
 #define UNUSED(x) (void)(x)
 

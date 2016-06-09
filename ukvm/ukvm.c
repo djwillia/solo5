@@ -45,6 +45,7 @@
 #include "processor-flags.h"
 #include "../kernel/interrupts.h"
 #include "ukvm.h"
+#include "ukvm_modules.h"
 #include "misc.h"
 
 struct ukvm_module *modules[] = {

@@ -16,6 +16,7 @@
 #include <err.h>
 
 #include "ukvm.h"
+#include "ukvm_modules.h"
 
 static char *netiface;
 static int netfd;
