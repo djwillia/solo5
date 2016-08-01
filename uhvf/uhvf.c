@@ -447,22 +447,11 @@ int main(int argc, char **argv)
 	hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_STAR, 1);
 	hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_SF_MASK, 1);
 #endif
-	hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_KGSBASE, 1);
-
-	/* vCPU setup */
-#define VMCS_PRI_PROC_BASED_CTLS_HLT           (1 << 7)
-#define VMCS_PRI_PROC_BASED_CTLS_CR8_LOAD      (1 << 19)
-#define VMCS_PRI_PROC_BASED_CTLS_CR8_STORE     (1 << 20)
-#define VMCS_PRI_PROC_BASED_CTLS_UNCOND_IO     (1 << 24)
+    hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_KGSBASE, 1);
 
     wvmcs(vcpu, VMCS_CTRL_PIN_BASED, cap2ctrl(vmx_cap_pinbased, 0));
     wvmcs(vcpu, VMCS_CTRL_CPU_BASED,
-          cap2ctrl(vmx_cap_procbased,
-                   VMCS_PRI_PROC_BASED_CTLS_HLT |
-                   VMCS_PRI_PROC_BASED_CTLS_CR8_LOAD |
-                   VMCS_PRI_PROC_BASED_CTLS_CR8_STORE));
-
-    
+          cap2ctrl(vmx_cap_procbased, CPU_BASED_HLT | CPU_BASED_UNCOND_IO));
 	wvmcs(vcpu, VMCS_CTRL_CPU_BASED2, cap2ctrl(vmx_cap_procbased2, 0));
     wvmcs(vcpu, VMCS_CTRL_VMENTRY_CONTROLS,
           cap2ctrl(vmx_cap_entry, VMENTRY_GUEST_IA32E | VMENTRY_LOAD_EFER));
