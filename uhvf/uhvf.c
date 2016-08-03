@@ -450,7 +450,7 @@ int main(int argc, char **argv)
     hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_KGSBASE, 1);
 
     wvmcs(vcpu, VMCS_CTRL_PIN_BASED, cap2ctrl(vmx_cap_pinbased, 0));
-    wvmcs(vcpu, VMCS_CTRL_CPU_BASED,
+    wvmcs(vcpu, VMCS_CTRL_CPU_BASED, 
           cap2ctrl(vmx_cap_procbased, CPU_BASED_HLT | CPU_BASED_UNCOND_IO));
 	wvmcs(vcpu, VMCS_CTRL_CPU_BASED2, cap2ctrl(vmx_cap_procbased2, 0));
     wvmcs(vcpu, VMCS_CTRL_VMENTRY_CONTROLS,
@@ -529,7 +529,6 @@ int main(int argc, char **argv)
         }
         case VMX_REASON_IRQ:
             /* VMEXIT due to host interrupt, nothing to do */
-            printf("IRQ\n");
             break;
         case VMX_REASON_EPT_VIOLATION:
             /* disambiguate between EPT cold misses and MMIO */
