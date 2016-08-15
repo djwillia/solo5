@@ -21,9 +21,11 @@ as that is a KVM abstraction.
 - All interrupt handlers can be removed from the solo5 parts of ukvm
   because we get to see what exception happened in uhvf
 
+- Remove sse from solo5
+
 - HLT isn't exiting (it looks like my Macbook VMX does not expose that
   capability), so we'll probably need a HLT hypercall.
 
-  
+
 
 
