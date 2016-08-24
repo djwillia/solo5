@@ -378,8 +378,13 @@ int main(int argc, char **argv)
     uint64_t kernel_end;
 	uint8_t *mem;
 
+    uint64_t speed;
+    size_t len = sizeof(speed);
+    sysctlbyname("hw.cpufrequency", &speed, &len, NULL, 0);
+    printf("cpu freq is %lld\n", speed);
+    
     if (argc < 2) {
-        fprintf(stderr, "Usage: hvdos [unikernel.ukvm]\n");
+        fprintf(stderr, "Usage: uhvf [unikernel.ukvm]\n");
         exit(1);
     }
 
