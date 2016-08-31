@@ -1,4 +1,7 @@
-# Copyright (c) 2015, IBM
+// XXX this file seems not to be compiled in?????
+
+
+                                # Copyright (c) 2015, IBM
 # Author(s): Dan Williams <djwillia@us.ibm.com>
 #
 # Permission to use, copy, modify, and/or distribute this software for
@@ -19,6 +22,7 @@
         .code64
         .globl read_cr3
         .globl sse_enable
+        .globl sse_test   
         
 read_cr3:       
         mov %cr3, %rax
@@ -37,3 +41,7 @@ sse_enable:
         ret
 
         
+sse_test:
+        por %xmm0, %xmm0
+
+    

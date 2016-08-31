@@ -19,7 +19,7 @@
         .code64
         .globl read_cr3
         .globl sse_enable
-        
+    
 read_cr3:       
         mov %cr3, %rax
         ret

@@ -21,11 +21,13 @@
 
 void time_init(void)
 {
+    printf("time init !!!\n");
     //assert(pvclock_init() == 0);
 }
 
 uint64_t solo5_clock_monotonic(void)
 {
+    printf("clock monotonic !!!\n");
     assert(0);
     //return pvclock_monotonic();
 }
@@ -33,12 +35,14 @@ uint64_t solo5_clock_monotonic(void)
 /* return wall time in nsecs */
 uint64_t solo5_clock_wall(void)
 {
+    printf("clock wall !!!\n");
     assert(0);
     //return pvclock_monotonic() + pvclock_epochoffset();
 }
 
 int solo5_poll(uint64_t until_nsecs)
 {
+    printf("poll !!!\n");
     /* XXX  perhaps poll should send until_nsecs directly */
     assert(until_nsecs != until_nsecs);
 #if 0
