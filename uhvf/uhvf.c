@@ -390,6 +390,104 @@ static void ukvm_port_puts(uint8_t *mem, uint32_t mem_off)
     printf("%.*s", p->len, (char *) (mem + (uint64_t) p->data));
 }
 
+
+static int platform_run(hv_vcpuid_t vcpu)
+{
+    return !!hv_vcpu_run(vcpu);
+}
+
+static int vcpu_loop(hv_vcpuid_t vcpu, uint8_t *mem)
+{
+    /* Repeatedly run code and handle VM exits. */
+    while (1) {
+        int i, handled = 0;
+
+        if (platform_run(vcpu))
+            err(1, "Couldn't run vcpu");
+
+#if 0
+        for (i = 0; i < NUM_MODULES; i++) {
+            if (!modules[i]->handle_exit(run, vcpufd, mem)) {
+                handled = 1;
+                break;
+            }
+        }
+#endif
+
+        if (handled)
+            continue;
+
+        uint64_t exit_reason = platform_get_exit_reason(vcpu);
+        
+        int stop = 0;
+	do {
+        int err;
+
+		/* handle VMEXIT */
+		uint64_t exit_reason = rvmcs(vcpu, VMCS_RO_EXIT_REASON);
+		uint64_t exit_qualification = rvmcs(vcpu, VMCS_RO_EXIT_QUALIFIC);
+        
+		switch (exit_reason) {
+        case VMX_REASON_HLT:
+            puts("EXIT_HLT\n");
+            stop = 1;
+            break;
+        case VMX_REASON_IO: {
+            uint16_t port = (uint16_t)(exit_qualification >> 16);
+            uint64_t rax = rreg(vcpu, HV_X86_RAX);
+            assert(rax == (rax & 0xffffffff));
+
+            switch(port) {
+            case UKVM_PORT_CHAR: {
+                printf("[%llx]", rax);
+                break;
+            }
+            case UKVM_PORT_PUTS: {
+                ukvm_port_puts(mem, rax);
+                break;
+            }
+            default:
+                printf("unknown port I/O 0x%x\n", port);
+                stop = 1;
+            }
+
+            if (!stop) {
+                /* advance RIP past I/O instruction */
+                uint64_t len = rvmcs(vcpu, VMCS_RO_VMEXIT_INSTR_LEN);
+                wvmcs(vcpu, VMCS_GUEST_RIP, rreg(vcpu, HV_X86_RIP) + len);
+            }
+
+            break;
+        }
+        case VMX_REASON_EXC_NMI: {
+            uint8_t interrupt_number = rvmcs(vcpu, VMCS_RO_IDT_VECTOR_INFO) & 0xFF;
+            printf("EXIT_REASON_EXCEPTION %d\n", interrupt_number);
+            printf("RIP was 0x%llx\n", rreg(vcpu, HV_X86_RIP));
+            printf("RSP was 0x%llx\n", rreg(vcpu, HV_X86_RSP));
+            stop = 1;
+            break;
+        }
+        case VMX_REASON_IRQ:
+            /* VMEXIT due to host interrupt, nothing to do */
+            break;
+        case VMX_REASON_EPT_VIOLATION:
+            /* disambiguate between EPT cold misses and MMIO */
+            /* ... handle MMIO ... */
+            break;
+	 		/* ... many more exit reasons go here ... */
+        case VMX_REASON_VMENTRY_GUEST:
+            printf("Invalid VMCS!");
+            break;
+        default:
+            printf("unhandled VMEXIT (0x%llx)\n", exit_reason);
+            printf("RIP was 0x%llx\n", rreg(vcpu, HV_X86_RIP));
+            stop = 1;
+		}
+	} while (!stop);
+
+    return 0; /* XXX Refactor return code paths in the above code */
+}
+
 int main(int argc, char **argv)
 {
     const char *elffile;
@@ -498,77 +596,8 @@ int main(int argc, char **argv)
     wreg(vcpu, HV_X86_RDI, BOOT_INFO);
 
     /* vCPU run loop */
-	int stop = 0;
-	do {
-        int err;
-        err = hv_vcpu_run(vcpu);
-		if (err) {
-            printf("run failed with err 0x%x\n", err);
-			abort();
-		}
-
-		/* handle VMEXIT */
-		uint64_t exit_reason = rvmcs(vcpu, VMCS_RO_EXIT_REASON);
-		uint64_t exit_qualification = rvmcs(vcpu, VMCS_RO_EXIT_QUALIFIC);
-        
-		switch (exit_reason) {
-        case VMX_REASON_HLT:
-            puts("EXIT_HLT\n");
-            stop = 1;
-            break;
-        case VMX_REASON_IO: {
-            uint16_t port = (uint16_t)(exit_qualification >> 16);
-            uint64_t rax = rreg(vcpu, HV_X86_RAX);
-            assert(rax == (rax & 0xffffffff));
-
-            switch(port) {
-            case UKVM_PORT_CHAR: {
-                printf("[%llx]", rax);
-                break;
-            }
-            case UKVM_PORT_PUTS: {
-                ukvm_port_puts(mem, rax);
-                break;
-            }
-            default:
-                printf("unknown port I/O 0x%x\n", port);
-                stop = 1;
-            }
-
-            if (!stop) {
-                /* advance RIP past I/O instruction */
-                uint64_t len = rvmcs(vcpu, VMCS_RO_VMEXIT_INSTR_LEN);
-                wvmcs(vcpu, VMCS_GUEST_RIP, rreg(vcpu, HV_X86_RIP) + len);
-            }
-
-            break;
-        }
-        case VMX_REASON_EXC_NMI: {
-            uint8_t interrupt_number = rvmcs(vcpu, VMCS_RO_IDT_VECTOR_INFO) & 0xFF;
-            printf("EXIT_REASON_EXCEPTION %d\n", interrupt_number);
-            printf("RIP was 0x%llx\n", rreg(vcpu, HV_X86_RIP));
-            printf("RSP was 0x%llx\n", rreg(vcpu, HV_X86_RSP));
-            stop = 1;
-            break;
-        }
-        case VMX_REASON_IRQ:
-            /* VMEXIT due to host interrupt, nothing to do */
-            break;
-        case VMX_REASON_EPT_VIOLATION:
-            /* disambiguate between EPT cold misses and MMIO */
-            /* ... handle MMIO ... */
-            break;
-	 		/* ... many more exit reasons go here ... */
-        case VMX_REASON_VMENTRY_GUEST:
-            printf("Invalid VMCS!");
-            break;
-        default:
-            printf("unhandled VMEXIT (0x%llx)\n", exit_reason);
-            printf("RIP was 0x%llx\n", rreg(vcpu, HV_X86_RIP));
-            stop = 1;
-		}
-	} while (!stop);
-
+    vcpu_loop(vcpu, mem);
+    
 	/*
 	 * optional clean-up
 	 */
