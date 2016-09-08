@@ -31,10 +31,11 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <assert.h>
-
+#include <libgen.h> /* for `basename` */
 #include "elf.h"
 #include "specialreg.h"
 
+#include <sys/sysctl.h>
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>
 
@@ -43,6 +44,24 @@
 #include "misc.h"
 #include "processor-flags.h"
 
+#include "unikernel-monitor.h"
+#include "../ukvm/ukvm_modules.h"
+
+struct ukvm_module *modules[] = {
+#ifdef UKVM_MODULE_BLK
+    &ukvm_blk,
+#endif
+#ifdef UKVM_MODULE_NET
+    &ukvm_net,
+#endif
+#ifdef UKVM_MODULE_GDB
+    &ukvm_gdb,
+#endif
+    NULL,
+};
+#define NUM_MODULES ((sizeof(modules) / sizeof(struct ukvm_module *)) - 1)
+
+    
 /*
  * Memory map:
  *
@@ -387,22 +406,76 @@ static void setup_system(hv_vcpuid_t vcpu, uint8_t *mem)
 static void ukvm_port_puts(uint8_t *mem, uint32_t mem_off)
 {
     struct ukvm_puts *p = (struct ukvm_puts *) (mem + mem_off);
+
     printf("%.*s", p->len, (char *) (mem + (uint64_t) p->data));
 }
 
 
-static int platform_run(hv_vcpuid_t vcpu)
+int platform_run(platform_vcpu_t vcpu,
+                 void *platform_data __attribute__((unused)))
 {
     return !!hv_vcpu_run(vcpu);
 }
+int platform_get_exit_reason(platform_vcpu_t vcpu,
+                             void *platform_data __attribute__((unused)))
+{
+    uint64_t exit_reason = rvmcs(vcpu, VMCS_RO_EXIT_REASON);
 
-static int vcpu_loop(hv_vcpuid_t vcpu, uint8_t *mem)
+    switch ((int)exit_reason) {    
+    case VMX_REASON_HLT:
+        return EXIT_HLT;
+    case VMX_REASON_IO:
+        return EXIT_IO;
+
+    case VMX_REASON_IRQ:           /* host interrupt */
+    case VMX_REASON_EPT_VIOLATION: /* cold misses */
+        return EXIT_IGNORE;
+
+    case VMX_REASON_EXC_NMI: {
+        uint8_t interrupt_number = rvmcs(vcpu, VMCS_RO_IDT_VECTOR_INFO) & 0xFF;
+        printf("EXIT_REASON_EXCEPTION %d\n", interrupt_number);
+        printf("RIP was 0x%llx\n", rreg(vcpu, HV_X86_RIP));
+        printf("RSP was 0x%llx\n", rreg(vcpu, HV_X86_RSP));
+        return EXIT_FAIL;
+    }
+    case VMX_REASON_VMENTRY_GUEST:
+        fprintf(stderr, "Invalid VMCS!");
+        return EXIT_FAIL;
+    default:
+        fprintf(stderr, "unhandled VMEXIT %lld (0x%llx)\n",
+                exit_reason, exit_reason);
+        fprintf(stderr, "RIP was 0x%llx\n", rreg(vcpu, HV_X86_RIP));
+        return EXIT_FAIL;
+    }
+}
+int platform_get_io_port(platform_vcpu_t vcpu, void *platform_data)
+{
+    uint64_t exit_qualification = rvmcs(vcpu, VMCS_RO_EXIT_QUALIFIC);
+    uint16_t port = (uint16_t)(exit_qualification >> 16);
+
+    return port;
+}
+uint32_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data)
+{
+    uint64_t rax = rreg(vcpu, HV_X86_RAX);
+    return (uint32_t)rax;
+}
+void platform_advance_rip(platform_vcpu_t vcpu, void *platform_data)
+{
+    uint64_t len = rvmcs(vcpu, VMCS_RO_VMEXIT_INSTR_LEN);
+    wvmcs(vcpu, VMCS_GUEST_RIP, rreg(vcpu, HV_X86_RIP) + len);
+}
+
+
+//static int vcpu_loop(hv_vcpuid_t vcpu, uint8_t *mem)
+static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
 {
     /* Repeatedly run code and handle VM exits. */
     while (1) {
-        int i, handled = 0;
+        //int i;
+        int handled = 0;
 
-        if (platform_run(vcpu))
+        if (platform_run(vcpu, platform_data))
             err(1, "Couldn't run vcpu");
 
 #if 0
@@ -417,96 +490,155 @@ static int vcpu_loop(hv_vcpuid_t vcpu, uint8_t *mem)
         if (handled)
             continue;
 
-        uint64_t exit_reason = platform_get_exit_reason(vcpu);
-        
-        int stop = 0;
-	do {
-        int err;
+        switch (platform_get_exit_reason(vcpu, platform_data)) {
+        case EXIT_HLT: {
+            puts("Exiting due to HLT\n");
+            /* get_and_dump_sregs(vcpufd); */
+            return 0;
+        }
+        case EXIT_IO: {
+            int port = platform_get_io_port(vcpu, platform_data);
+            uint32_t data = platform_get_io_data(vcpu, platform_data);
 
-		/* handle VMEXIT */
-		uint64_t exit_reason = rvmcs(vcpu, VMCS_RO_EXIT_REASON);
-		uint64_t exit_qualification = rvmcs(vcpu, VMCS_RO_EXIT_QUALIFIC);
-        
-		switch (exit_reason) {
-        case VMX_REASON_HLT:
-            puts("EXIT_HLT\n");
-            stop = 1;
-            break;
-        case VMX_REASON_IO: {
-            uint16_t port = (uint16_t)(exit_qualification >> 16);
-            uint64_t rax = rreg(vcpu, HV_X86_RAX);
-            assert(rax == (rax & 0xffffffff));
-
-            switch(port) {
-            case UKVM_PORT_CHAR: {
-                printf("[%llx]", rax);
+            switch (port) {
+            case UKVM_PORT_PUTS:
+                ukvm_port_puts(mem, data);
                 break;
-            }
-            case UKVM_PORT_PUTS: {
-                ukvm_port_puts(mem, rax);
+#if 0
+            case UKVM_PORT_NANOSLEEP:
+                ukvm_port_nanosleep(mem, data, (struct kvm_run *)platform_data);
                 break;
-            }
+            case UKVM_PORT_DBG_STACK:
+                ukvm_port_dbg_stack(mem, (int)vcpu);
+                break;
+            case UKVM_PORT_POLL:
+                ukvm_port_poll(mem, data);
+                break;
+#endif                
             default:
-                printf("unknown port I/O 0x%x\n", port);
-                stop = 1;
-            }
+                errx(1, "unhandled IO_PORT EXIT (0x%x)", port);
+                return -1;
+            };
 
-            if (!stop) {
-                /* advance RIP past I/O instruction */
-                uint64_t len = rvmcs(vcpu, VMCS_RO_VMEXIT_INSTR_LEN);
-                wvmcs(vcpu, VMCS_GUEST_RIP, rreg(vcpu, HV_X86_RIP) + len);
-            }
+            platform_advance_rip(vcpu, platform_data);
 
             break;
         }
-        case VMX_REASON_EXC_NMI: {
-            uint8_t interrupt_number = rvmcs(vcpu, VMCS_RO_IDT_VECTOR_INFO) & 0xFF;
-            printf("EXIT_REASON_EXCEPTION %d\n", interrupt_number);
-            printf("RIP was 0x%llx\n", rreg(vcpu, HV_X86_RIP));
-            printf("RSP was 0x%llx\n", rreg(vcpu, HV_X86_RSP));
-            stop = 1;
+        case EXIT_IGNORE: {
             break;
         }
-        case VMX_REASON_IRQ:
-            /* VMEXIT due to host interrupt, nothing to do */
-            break;
-        case VMX_REASON_EPT_VIOLATION:
-            /* disambiguate between EPT cold misses and MMIO */
-            /* ... handle MMIO ... */
-            break;
-	 		/* ... many more exit reasons go here ... */
-        case VMX_REASON_VMENTRY_GUEST:
-            printf("Invalid VMCS!");
-            break;
-        default:
-            printf("unhandled VMEXIT (0x%llx)\n", exit_reason);
-            printf("RIP was 0x%llx\n", rreg(vcpu, HV_X86_RIP));
-            stop = 1;
-		}
-	} while (!stop);
+        case EXIT_FAIL:
+            return -1;
+        }
+    }
+    
+    return -1; /* never reached */
+}
 
-    return 0; /* XXX Refactor return code paths in the above code */
+int setup_modules(int vcpufd, uint8_t *mem)
+{
+    int i;
+
+    for (i = 0; i < NUM_MODULES; i++) {
+        if (modules[i]->setup(vcpufd, mem)) {
+            printf("Please check you have correctly specified:\n %s\n",
+                   modules[i]->usage());
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void usage(const char *prog)
+{
+    int m;
+
+    printf("usage: %s [ CORE OPTIONS ] [ MODULE OPTIONS ] KERNEL", prog);
+    printf(" [ -- ] [ ARGS ]\n");
+    printf("Core options:\n");
+    printf("    --help (display this help)\n");
+    printf("Compiled-in module options:\n");
+    for (m = 0; m < NUM_MODULES; m++)
+        printf("    %s\n", modules[m]->usage());
+    exit(1);
 }
 
 int main(int argc, char **argv)
 {
-    const char *elffile;
     uint64_t elf_entry;
     uint64_t kernel_end;
 	uint8_t *mem;
-
+    const char *prog;
+    const char *elffile;
+    int matched;
+    
     uint64_t speed;
     size_t len = sizeof(speed);
     sysctlbyname("hw.cpufrequency", &speed, &len, NULL, 0);
     printf("cpu freq is %lld\n", speed);
+
+    prog = basename(*argv);
+    argc--;
+    argv++;
     
-    if (argc < 2) {
-        fprintf(stderr, "Usage: uhvf [unikernel.ukvm]\n");
-        exit(1);
+    if (argc < 1)
+        usage(prog);
+
+    do {
+        int j;
+
+        if (!strcmp("--help", *argv))
+            usage(prog);
+
+        matched = 0;
+        for (j = 0; j < NUM_MODULES; j++) {
+            if (!modules[j]->handle_cmdarg(*argv)) {
+                matched = 1;
+                argc--;
+                argv++;
+                break;
+            }
+        }
+    } while (matched && *argv);
+
+    if (!*argv)
+        usage(prog);
+
+    if (*argv[0] == '-') {
+        printf("Invalid option: %s\n", *argv);
+        return 1;
     }
 
+    elffile = *argv;
+    argc--;
+    argv++;
+
+    if (argc) {
+        if (strcmp("--", *argv))
+            usage(prog);
+        argc--;
+        argv++;
+    }
+
+#if 0
     elffile = argv[1];
-    
+
+    if (argc > 2) {
+        int j, matched;
+        argv += 2;
+        argc -= 2;
+
+        matched = 0;
+        for (j = 0; j < NUM_MODULES; j++) {
+            if (!modules[j]->handle_cmdarg(*argv)) {
+                matched = 1;
+                argc--;
+                argv++;
+                break;
+            }
+        }
+    }
+#endif    
 	/* create a VM instance for the current task */
 	if (hv_vm_create(HV_VM_DEFAULT)) {
 		abort();
@@ -595,8 +727,11 @@ int main(int argc, char **argv)
     wvmcs(vcpu, VMCS_GUEST_RSP, GUEST_SIZE - 8);
     wreg(vcpu, HV_X86_RDI, BOOT_INFO);
 
+    if (setup_modules(vcpu, mem))
+        errx(1, "couldn't setup modules");
+    
     /* vCPU run loop */
-    vcpu_loop(vcpu, mem);
+    vcpu_loop(vcpu, NULL, mem);
     
 	/*
 	 * optional clean-up

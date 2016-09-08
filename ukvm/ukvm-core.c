@@ -523,9 +523,8 @@ static void *event_loop(void *arg)
 }
 #endif
 
-void ukvm_port_puts(uint8_t *mem, void *data)
+void ukvm_port_puts(uint8_t *mem, uint32_t mem_off)
 {
-    uint32_t mem_off = *(uint32_t *) data;
     struct ukvm_puts *p = (struct ukvm_puts *) (mem + mem_off);
 
     printf("%.*s", p->len, (char *) (mem + (uint64_t) p->data));
@@ -533,10 +532,9 @@ void ukvm_port_puts(uint8_t *mem, void *data)
 }
 
 
-void ukvm_port_nanosleep(uint8_t *mem, void *data, struct kvm_run *run)
+void ukvm_port_nanosleep(uint8_t *mem, uint32_t mem_off, struct kvm_run *run)
 {
-    uint32_t arg_addr = *(uint32_t *) data;
-    struct ukvm_nanosleep *t = (struct ukvm_nanosleep *) (mem + arg_addr);
+    struct ukvm_nanosleep *t = (struct ukvm_nanosleep *) (mem + mem_off);
     struct timespec now, ts;
 
     clock_gettime(CLOCK_REALTIME, &now);
@@ -600,10 +598,9 @@ void ukvm_port_dbg_stack(uint8_t *mem, int vcpufd)
     }
 }
 
-void ukvm_port_poll(uint8_t *mem, void *data)
+void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
 {
-    uint32_t arg_addr = *(uint32_t *) data;
-    struct ukvm_poll *t = (struct ukvm_poll *) (mem + arg_addr);
+    struct ukvm_poll *t = (struct ukvm_poll *) (mem + mem_off);
     struct timespec ts;
     int rc, i, num_fds = 0;
     struct pollfd fds[NUM_MODULES];  /* we only support at most one
@@ -693,12 +690,18 @@ static int platform_get_io_port(platform_vcpu_t vcpu, void *platform_data)
     
     return run->io.port;
 }
-static uint8_t *platform_get_io_data(platform_vcpu_t vcpu, void *platform_data)
+static uint32_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data)
 {
     struct kvm_run *run = (struct kvm_run *)platform_data;
     assert(run->io.direction == KVM_EXIT_IO_OUT);
     
-    return (uint8_t *)run + run->io.data_offset;
+    uint8_t *data = (uint8_t *)run + run->io.data_offset;
+
+    return *(uint32_t *) data;
+}
+static void platform_advance_rip(platform_vcpu_t vcpu, void *platform_data)
+{
+    /* no-op: KVM automatically advances RIP after I/O */
 }
 
 static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
@@ -729,7 +732,7 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
         }
         case EXIT_IO: {
             int port = platform_get_io_port(vcpu, platform_data);
-            uint8_t *data = platform_get_io_data(vcpu, platform_data);
+            uint32_t data = platform_get_io_data(vcpu, platform_data);
 
             switch (port) {
             case UKVM_PORT_PUTS:
@@ -748,6 +751,9 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
                 errx(1, "unhandled IO_PORT EXIT (0x%x)", port);
                 return -1;
             };
+            
+            platform_advance_rip(vcpu, platform_data);
+
             break;
         }
         case EXIT_IGNORE: {
