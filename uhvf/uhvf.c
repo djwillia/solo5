@@ -432,8 +432,42 @@ int platform_get_exit_reason(platform_vcpu_t vcpu,
         return EXIT_IGNORE;
 
     case VMX_REASON_EXC_NMI: {
-        uint8_t interrupt_number = rvmcs(vcpu, VMCS_RO_IDT_VECTOR_INFO) & 0xFF;
-        printf("EXIT_REASON_EXCEPTION %d\n", interrupt_number);
+        uint32_t idt_vector_info = rvmcs(vcpu, VMCS_RO_IDT_VECTOR_INFO);
+        uint32_t idt_vector_error = rvmcs(vcpu, VMCS_RO_IDT_VECTOR_ERROR);
+        uint32_t irq_info = rvmcs(vcpu, VMCS_RO_VMEXIT_IRQ_INFO);
+        uint32_t irq_error = rvmcs(vcpu, VMCS_RO_VMEXIT_IRQ_ERROR);
+
+        printf("EXIT_REASON_EXCEPTION\n");
+        if (idt_vector_info) {
+            printf("idt_vector_info = 0x%x\n", idt_vector_info);
+            printf("idt_vector_error = 0x%x\n", idt_vector_error);
+        }
+        if (irq_info) {
+            printf("irq_info = 0x%x\n", irq_info);
+            printf("  vector = %d (0x%x)\n",
+                   irq_info & 0xff,
+                   irq_info & 0xff);
+            switch((irq_info >> 8) & 0x3) {
+            case 0:
+                printf("  type = external\n");
+                break;
+            case 2:
+                printf("  type = NMI\n");
+                break;
+            case 3:
+                printf("  type = HW exception\n");
+                break;
+            case 6:
+                printf("  type = SW exception\n");
+                break;
+            default:
+                printf("  type = BOGUS!!!\n");
+            }
+            if ((irq_info >> 11) & 0x1) {
+                printf("irq_error = 0x%x\n", irq_error);
+            }
+        }
+
         printf("RIP was 0x%llx\n", rreg(vcpu, HV_X86_RIP));
         printf("RSP was 0x%llx\n", rreg(vcpu, HV_X86_RSP));
         return EXIT_FAIL;
@@ -563,6 +597,25 @@ static void usage(const char *prog)
     exit(1);
 }
 
+#define VMX_CTRLS(v,c,t,f) do {                 \
+    uint64_t cap;                               \
+    if (hv_vmx_read_capability((c), &cap)) {    \
+        abort();                                \
+	}                                           \
+                                                \
+    uint64_t zeros = cap & 0xffffffff;          \
+    uint64_t ones = (cap >> 32) & 0xffffffff;   \
+    uint64_t setting = cap2ctrl(cap, (f));      \
+    printf("%s %s\n", #c, #t);                  \
+    printf("   0s:      0x%08llx\n", zeros);    \
+    printf("   1s:      0x%08llx\n", ones);     \
+    printf("   setting: 0x%08llx\n", setting);  \
+                                                \
+    wvmcs((v), (t), setting);                   \
+    } while(0)                                  \
+        
+
+
 int main(int argc, char **argv)
 {
     uint64_t elf_entry;
@@ -639,45 +692,24 @@ int main(int argc, char **argv)
         }
     }
 #endif    
+
 	/* create a VM instance for the current task */
 	if (hv_vm_create(HV_VM_DEFAULT)) {
 		abort();
 	}
 
-	/* get hypervisor enforced capabilities of the machine, (see Intel docs) */
-	uint64_t vmx_cap_pinbased, vmx_cap_procbased, vmx_cap_procbased2, vmx_cap_entry;
-	if (hv_vmx_read_capability(HV_VMX_CAP_PINBASED, &vmx_cap_pinbased)) {
-		abort();
-	}
-	if (hv_vmx_read_capability(HV_VMX_CAP_PROCBASED, &vmx_cap_procbased)) {
-		abort();
-	}
-	if (hv_vmx_read_capability(HV_VMX_CAP_PROCBASED2, &vmx_cap_procbased2)) {
-		abort();
-	}
-	if (hv_vmx_read_capability(HV_VMX_CAP_ENTRY, &vmx_cap_entry)) {
-		abort();
-	}
-
-    printf("pin-based:   0x%016llx\n", vmx_cap_pinbased);
-    printf("proc-based:  0x%016llx\n", vmx_cap_procbased);
-    printf("proc-based2: 0x%016llx\n", vmx_cap_procbased2);
-    printf("cap-entry:   0x%016llx\n", vmx_cap_entry);
-
-    
 	/* allocate some guest physical memory */
 	if (!(mem = (uint8_t *)valloc(GUEST_SIZE))) {
 		abort();
 	}
     memset(mem, 0, GUEST_SIZE);
 
-    /* map a segment of guest physical memory into the guest physical address
-	 * space of the vm (at address 0) */
-	if (hv_vm_map(mem, 0, GUEST_SIZE, HV_MEMORY_READ | HV_MEMORY_WRITE
-                  | HV_MEMORY_EXEC))
-        {
-            abort();
-        }
+    /* map a segment of guest physical memory into the guest physical
+	 * address space of the vm (at address 0) */
+	if (hv_vm_map(mem, 0, GUEST_SIZE,
+                  HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC)) {
+        abort();
+    }
 
 	/* create a vCPU instance for this thread */
 	hv_vcpuid_t vcpu;
@@ -685,38 +717,55 @@ int main(int argc, char **argv)
 		abort();
 	}
 
-#if 0
+    printf("msr bitmaps 0x%llx\n", rvmcs(vcpu, VMCS_CTRL_MSR_BITMAPS));
+
+	/* 
+     * From FreeBSD:
+     *
+	 * It is safe to allow direct access to MSR_GSBASE and MSR_FSBASE.
+	 * The guest FSBASE and GSBASE are saved and restored during
+	 * vm-exit and vm-entry respectively. The host FSBASE and GSBASE are
+	 * always restored from the vmcs host state area on vm-exit.
+	 *
+	 * The SYSENTER_CS/ESP/EIP MSRs are identical to FS/GSBASE in
+	 * how they are saved/restored so can be directly accessed by the
+	 * guest.
+	 *
+	 * MSR_EFER is saved and restored in the guest VMCS area on a
+	 * VM exit and entry respectively. It is also restored from the
+	 * host VMCS area on a VM exit.
+     */
 	if (hv_vcpu_enable_native_msr(vcpu, MSR_GSBASE, 1) ||
 		hv_vcpu_enable_native_msr(vcpu, MSR_FSBASE, 1) ||
 		hv_vcpu_enable_native_msr(vcpu, MSR_SYSENTER_CS_MSR, 1) ||
 		hv_vcpu_enable_native_msr(vcpu, MSR_SYSENTER_ESP_MSR, 1) ||
 		hv_vcpu_enable_native_msr(vcpu, MSR_SYSENTER_EIP_MSR, 1) ||
-		hv_vcpu_enable_native_msr(vcpu, MSR_TSC, 1) ||
-		hv_vcpu_enable_native_msr(vcpu, MSR_IA32_TSC_AUX, 1))
+        hv_vcpu_enable_native_msr(vcpu, MSR_LSTAR, 1) ||
+        hv_vcpu_enable_native_msr(vcpu, MSR_CSTAR, 1) ||
+        hv_vcpu_enable_native_msr(vcpu, MSR_STAR, 1) ||
+        hv_vcpu_enable_native_msr(vcpu, MSR_SF_MASK, 1) ||
+        hv_vcpu_enable_native_msr(vcpu, MSR_KGSBASE, 1))
 	{
 		abort();
 	}
-    hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_LSTAR, 1);
-    hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_CSTAR, 1);
-	hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_STAR, 1);
-	hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_SF_MASK, 1);
-#endif
-    hv_vcpu_enable_native_msr(((hv_vcpuid_t) vcpu), MSR_KGSBASE, 1);
+    
+    VMX_CTRLS(vcpu, HV_VMX_CAP_PINBASED, VMCS_CTRL_PIN_BASED, 0);
 
-    wvmcs(vcpu, VMCS_CTRL_PIN_BASED, cap2ctrl(vmx_cap_pinbased, 0));
-    wvmcs(vcpu, VMCS_CTRL_CPU_BASED, 
-          cap2ctrl(vmx_cap_procbased, CPU_BASED_HLT | CPU_BASED_UNCOND_IO));
-	wvmcs(vcpu, VMCS_CTRL_CPU_BASED2, cap2ctrl(vmx_cap_procbased2, 0));
-    wvmcs(vcpu, VMCS_CTRL_VMENTRY_CONTROLS,
-          cap2ctrl(vmx_cap_entry, VMENTRY_GUEST_IA32E | VMENTRY_LOAD_EFER));
-	wvmcs(vcpu, VMCS_CTRL_EXC_BITMAP, 0xffffffff);
-	wvmcs(vcpu, VMCS_CTRL_CR0_MASK, 0);
-	wvmcs(vcpu, VMCS_CTRL_CR0_SHADOW, 0);
-	wvmcs(vcpu, VMCS_CTRL_CR4_MASK, 0);
-	wvmcs(vcpu, VMCS_CTRL_CR4_SHADOW, 0);
+    /* It appears that bit 19 and 20 (CR8 load/store exiting) are
+     * necessary for a bunch of things to work, including
+     * CPU_BASED_HLT (bit 7) and MONITOR_TRAP_FLAG (bit 27) */
+    VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED, VMCS_CTRL_CPU_BASED, 0
+              | CPU_BASED_HLT | CPU_BASED_UNCOND_IO
+              | CPU_BASED_CR8_LOAD | CPU_BASED_CR8_STORE
+              | CPU_BASED_CR3_LOAD | CPU_BASED_CR3_STORE);
+    VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED2, VMCS_CTRL_CPU_BASED2, 0);
+    VMX_CTRLS(vcpu, HV_VMX_CAP_ENTRY, VMCS_CTRL_VMENTRY_CONTROLS, 0
+              | VMENTRY_GUEST_IA32E | VMENTRY_LOAD_EFER);
+    VMX_CTRLS(vcpu, HV_VMX_CAP_EXIT, VMCS_CTRL_VMEXIT_CONTROLS, 0);
+              
+    wvmcs(vcpu, VMCS_CTRL_EXC_BITMAP, 0xffffffff);
 
     load_code(elffile, mem, &elf_entry, &kernel_end);
-
     setup_system(vcpu, mem);
     
     /* Setup ukvm_boot_info and command line */
@@ -729,7 +778,13 @@ int main(int argc, char **argv)
 
     if (setup_modules(vcpu, mem))
         errx(1, "couldn't setup modules");
-    
+
+    /* trap everything for cr0 and cr4 */
+	wvmcs(vcpu, VMCS_CTRL_CR0_MASK, 0xffffffff);
+	wvmcs(vcpu, VMCS_CTRL_CR4_MASK, 0xffffffff);
+	wvmcs(vcpu, VMCS_CTRL_CR0_SHADOW, rvmcs(vcpu, VMCS_GUEST_CR0));
+	wvmcs(vcpu, VMCS_CTRL_CR4_SHADOW, rvmcs(vcpu, VMCS_GUEST_CR4));
+
     /* vCPU run loop */
     vcpu_loop(vcpu, NULL, mem);
     
