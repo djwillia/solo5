@@ -4,6 +4,7 @@
 
 enum {
     EXIT_HLT,
+    EXIT_RDTSC,
     EXIT_IO,
     EXIT_IGNORE,
     EXIT_FAIL,

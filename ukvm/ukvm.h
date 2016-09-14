@@ -55,12 +55,20 @@ static inline uint32_t ukvm_ptr(volatile void *p)
 
 #define UKVM_PORT_POLL      0x509
 
+#define UKVM_PORT_TIME_INIT 0x50a
+
 
 /* UKVM_PORT_PUTS */
 struct ukvm_puts {
 	/* IN */
 	char *data;
 	int len;
+};
+
+/* UKVM_PORT_PUTS */
+struct ukvm_time_init {
+	/* OUT */
+	uint64_t freq;
 };
 
 /* UKVM_PORT_NANOSLEEP */

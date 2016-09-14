@@ -36,8 +36,15 @@
 #include "specialreg.h"
 
 #include <sys/sysctl.h>
+#include <sys/poll.h>
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>
+
+
+#ifdef __MACH__
+#include <mach/clock.h>
+#include <mach/mach.h>
+#endif
 
 /* from ukvm */
 #include "ukvm.h"
@@ -83,6 +90,9 @@ struct ukvm_module *modules[] = {
 #define BOOT_PML4    0x10000
 #define BOOT_PDPTE   0x11000
 #define BOOT_PDE     0x12000
+
+static uint64_t time_sleeping_s;  /* track unikernel sleeping time */
+static uint64_t time_sleeping_ns; 
 
 //#define DEBUG 1
 
@@ -410,6 +420,72 @@ static void ukvm_port_puts(uint8_t *mem, uint32_t mem_off)
     printf("%.*s", p->len, (char *) (mem + (uint64_t) p->data));
 }
 
+static void ukvm_port_time_init(uint8_t *mem, uint32_t mem_off)
+{
+    struct ukvm_time_init *p = (struct ukvm_time_init *) (mem + mem_off);
+    size_t len = sizeof(p->freq);
+
+    sysctlbyname("machdep.tsc.frequency", &p->freq, &len, NULL, 0);
+}
+
+static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
+{
+    struct ukvm_poll *t = (struct ukvm_poll *) (mem + mem_off);
+    int rc;
+#if 0
+    int rc, num_fds = 0;
+    struct pollfd fds[NUM_MODULES];  /* we only support at most one
+                                      * instance per module for now
+                                      */
+
+    for (i = 0; i < NUM_MODULES; i++) {
+        int fd = modules[i]->get_fd();
+
+        if (fd) {
+            fds[num_fds].fd = fd;
+            fds[num_fds].events = POLLIN;
+            num_fds += 1;
+        }
+    }
+
+    ts.tv_sec = t->timeout_nsecs / 1000000000ULL;
+    ts.tv_nsec = t->timeout_nsecs % 1000000000ULL;
+#endif
+
+    /*
+     * Guest execution is blocked during the poll() call, note that
+     * interrupts will not be injected.
+     */
+    //rc = poll(fds, num_fds, t->timeout_nsecs);
+    //assert(rc >= 0);
+
+    /* START_TIME */
+    clock_serv_t cclock;
+    mach_timespec_t mts;
+    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+    clock_get_time(cclock, &mts);
+    uint64_t _time_s = mts.tv_sec;
+    uint64_t _time_ns = mts.tv_nsec;
+
+    {
+        struct timespec ts;
+        
+        rc = 0;
+        ts.tv_sec = t->timeout_nsecs / 1000000000ULL;
+        ts.tv_nsec = t->timeout_nsecs % 1000000000ULL;
+
+        //printf("sleeping for %ld s (%ld ns)\n", ts.tv_sec, ts.tv_nsec);
+        nanosleep(&ts, NULL);
+    }
+
+    /* END_TIME */
+    clock_get_time(cclock, &mts);
+    mach_port_deallocate(mach_task_self(), cclock);
+    time_sleeping_s += mts.tv_sec - _time_s;
+    time_sleeping_ns += mts.tv_nsec - _time_ns;
+    
+    t->ret = rc;
+}
 
 int platform_run(platform_vcpu_t vcpu,
                  void *platform_data __attribute__((unused)))
@@ -424,6 +500,8 @@ int platform_get_exit_reason(platform_vcpu_t vcpu,
     switch ((int)exit_reason) {    
     case VMX_REASON_HLT:
         return EXIT_HLT;
+    case VMX_REASON_RDTSC:
+        return EXIT_RDTSC;
     case VMX_REASON_IO:
         return EXIT_IO;
 
@@ -500,10 +578,18 @@ void platform_advance_rip(platform_vcpu_t vcpu, void *platform_data)
     wvmcs(vcpu, VMCS_GUEST_RIP, rreg(vcpu, HV_X86_RIP) + len);
 }
 
+static uint64_t tsc_freq;
+static void tsc_init(void) {
+    size_t len = sizeof(tsc_freq);
+
+    sysctlbyname("machdep.tsc.frequency", &tsc_freq, &len, NULL, 0);
+}
+
 
 //static int vcpu_loop(hv_vcpuid_t vcpu, uint8_t *mem)
 static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
 {
+    tsc_init();
     /* Repeatedly run code and handle VM exits. */
     while (1) {
         //int i;
@@ -530,6 +616,34 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
             /* get_and_dump_sregs(vcpufd); */
             return 0;
         }
+        case EXIT_RDTSC: {
+            uint64_t exec_time;
+            uint64_t new_tsc;
+            static uint64_t last_tsc;
+
+            if (hv_vcpu_get_exec_time(vcpu, &exec_time)) 
+                errx(1, "couldn't get exec time");
+
+            uint64_t exec_time_s = exec_time / 1000000000ULL;
+            uint64_t exec_time_ns = exec_time - (exec_time_s * 1000000000ULL);
+
+            exec_time_s += time_sleeping_s;
+            exec_time_ns += time_sleeping_ns;
+
+            new_tsc = exec_time_s * tsc_freq
+                + (exec_time_ns * tsc_freq / 1000000000ULL);
+            
+            {
+                assert(new_tsc > last_tsc);
+                last_tsc = new_tsc;
+            }
+            
+            wreg(vcpu, HV_X86_RAX, new_tsc & 0xffffffff);
+            wreg(vcpu, HV_X86_RDX, (new_tsc >> 32) & 0xffffffff);
+            
+            platform_advance_rip(vcpu, platform_data);
+            break;
+        }
         case EXIT_IO: {
             int port = platform_get_io_port(vcpu, platform_data);
             uint32_t data = platform_get_io_data(vcpu, platform_data);
@@ -538,15 +652,18 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
             case UKVM_PORT_PUTS:
                 ukvm_port_puts(mem, data);
                 break;
+            case UKVM_PORT_TIME_INIT:
+                ukvm_port_time_init(mem, data);
+                break;
+            case UKVM_PORT_POLL:
+                ukvm_port_poll(mem, data);
+                break;
 #if 0
             case UKVM_PORT_NANOSLEEP:
                 ukvm_port_nanosleep(mem, data, (struct kvm_run *)platform_data);
                 break;
             case UKVM_PORT_DBG_STACK:
                 ukvm_port_dbg_stack(mem, (int)vcpu);
-                break;
-            case UKVM_PORT_POLL:
-                ukvm_port_poll(mem, data);
                 break;
 #endif                
             default:
@@ -625,11 +742,6 @@ int main(int argc, char **argv)
     const char *elffile;
     int matched;
     
-    uint64_t speed;
-    size_t len = sizeof(speed);
-    sysctlbyname("hw.cpufrequency", &speed, &len, NULL, 0);
-    printf("cpu freq is %lld\n", speed);
-
     prog = basename(*argv);
     argc--;
     argv++;
@@ -717,8 +829,6 @@ int main(int argc, char **argv)
 		abort();
 	}
 
-    printf("msr bitmaps 0x%llx\n", rvmcs(vcpu, VMCS_CTRL_MSR_BITMAPS));
-
 	/* 
      * From FreeBSD:
      *
@@ -755,10 +865,13 @@ int main(int argc, char **argv)
      * necessary for a bunch of things to work, including
      * CPU_BASED_HLT (bit 7) and MONITOR_TRAP_FLAG (bit 27) */
     VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED, VMCS_CTRL_CPU_BASED, 0
-              | CPU_BASED_HLT | CPU_BASED_UNCOND_IO
+              | CPU_BASED_HLT | CPU_BASED_INVLPG
+              | CPU_BASED_MWAIT | CPU_BASED_RDPMC
+              | CPU_BASED_RDTSC | CPU_BASED_UNCOND_IO
               | CPU_BASED_CR8_LOAD | CPU_BASED_CR8_STORE
               | CPU_BASED_CR3_LOAD | CPU_BASED_CR3_STORE);
-    VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED2, VMCS_CTRL_CPU_BASED2, 0);
+    VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED2, VMCS_CTRL_CPU_BASED2, 0
+              | CPU_BASED2_DESC_TABLE | CPU_BASED2_RDRAND);
     VMX_CTRLS(vcpu, HV_VMX_CAP_ENTRY, VMCS_CTRL_VMENTRY_CONTROLS, 0
               | VMENTRY_GUEST_IA32E | VMENTRY_LOAD_EFER);
     VMX_CTRLS(vcpu, HV_VMX_CAP_EXIT, VMCS_CTRL_VMEXIT_CONTROLS, 0);
@@ -785,6 +898,7 @@ int main(int argc, char **argv)
 	wvmcs(vcpu, VMCS_CTRL_CR0_SHADOW, rvmcs(vcpu, VMCS_GUEST_CR0));
 	wvmcs(vcpu, VMCS_CTRL_CR4_SHADOW, rvmcs(vcpu, VMCS_GUEST_CR4));
 
+    
     /* vCPU run loop */
     vcpu_loop(vcpu, NULL, mem);
     

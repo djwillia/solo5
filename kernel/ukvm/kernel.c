@@ -47,14 +47,14 @@ void _start(struct ukvm_boot_info *bi)
     banner();
     printf("mem_size=%lx, kernel_end=%lx\n", bi->mem_size, bi->kernel_end);
 
-    gdt_init();
-    interrupts_init();
-    interrupts_enable();
+    //gdt_init();
+    //interrupts_init();
+    //interrupts_enable();
 
     mem_init(bi->mem_size, bi->kernel_end);
 
     /* for floating point */
-    sse_enable();
+    //sse_enable();
     time_init();
 
     ret = solo5_app_main((char *)bi->cmdline);
