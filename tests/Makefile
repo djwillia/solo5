@@ -1,4 +1,5 @@
-TESTDIRS=test_hello test_ping_serve test_blk
+#TESTDIRS=test_hello test_ping_serve test_blk
+TESTDIRS=test_hello test_ping_serve
 
 UKVM_TESTS=$(subst test, _test_ukvm, $(TESTDIRS))
 VIRTIO_TESTS=$(subst test, _test_virtio, $(TESTDIRS))

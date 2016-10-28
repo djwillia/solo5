@@ -22,6 +22,8 @@
  * EFLAGS bits
  */
 #define X86_EFLAGS_CF	0x00000001 /* Carry Flag */
+#define X86_EFLAGS_TF_BIT   8 /* Trap flag (single step) */
+#define X86_EFLAGS_TF   _BITUL(X86_EFLAGS_TF_BIT)
 
 /*
  * Basic CPU control in CR0

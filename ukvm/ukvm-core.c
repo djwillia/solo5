@@ -630,6 +630,7 @@ void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
     t->ret = rc;
 }
 
+#if 0
 enum {
     EXIT_HLT,
     EXIT_IO,
@@ -638,8 +639,9 @@ enum {
 };
 
 typedef uint64_t platform_vcpu_t;
-static int platform_run(platform_vcpu_t vcpu,
-                        void *platform_data __attribute__((unused)))
+#endif
+int platform_run(platform_vcpu_t vcpu,
+                 void *platform_data __attribute__((unused)))
 {
     int vcpufd = (int)vcpu;
     int ret = ioctl(vcpufd, KVM_RUN, NULL);
@@ -652,8 +654,8 @@ static int platform_run(platform_vcpu_t vcpu,
     return 0;
 }
 
-static int platform_get_exit_reason(platform_vcpu_t vcpu __attribute__((unused)),
-                                    void *platform_data)
+int platform_get_exit_reason(platform_vcpu_t vcpu __attribute__((unused)),
+                             void *platform_data)
 {
     struct kvm_run *run = (struct kvm_run *)platform_data;
 
@@ -683,14 +685,14 @@ static int platform_get_exit_reason(platform_vcpu_t vcpu __attribute__((unused))
     }
 }
 
-static int platform_get_io_port(platform_vcpu_t vcpu, void *platform_data)
+int platform_get_io_port(platform_vcpu_t vcpu, void *platform_data)
 {
     struct kvm_run *run = (struct kvm_run *)platform_data;
     assert(run->io.direction == KVM_EXIT_IO_OUT);
     
     return run->io.port;
 }
-static uint32_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data)
+uint32_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data)
 {
     struct kvm_run *run = (struct kvm_run *)platform_data;
     assert(run->io.direction == KVM_EXIT_IO_OUT);
@@ -699,7 +701,7 @@ static uint32_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data)
 
     return *(uint32_t *) data;
 }
-static void platform_advance_rip(platform_vcpu_t vcpu, void *platform_data)
+void platform_advance_rip(platform_vcpu_t vcpu, void *platform_data)
 {
     /* no-op: KVM automatically advances RIP after I/O */
 }
@@ -708,11 +710,13 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
 {
     /* Repeatedly run code and handle VM exits. */
     while (1) {
-        int i, handled = 0;
+        //int i,
+        int handled = 0;
 
         if (platform_run(vcpu, platform_data))
             err(1, "Couldn't run vcpu");
 
+#if 0
         for (i = 0; i < NUM_MODULES; i++) {
             if (!modules[i]->handle_exit((struct kvm_run *)platform_data,
                                          (int)vcpu, mem)) {
@@ -720,7 +724,7 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
                 break;
             }
         }
-
+#endif
         if (handled)
             continue;
 

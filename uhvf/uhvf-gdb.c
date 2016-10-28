@@ -104,6 +104,7 @@
 #include <netdb.h>
 #include <assert.h>
 
+#include "processor-flags.h"
 #include "ukvm.h"
 #include "unikernel-monitor.h"
 #include "../ukvm/ukvm_modules.h"
@@ -467,8 +468,85 @@ int gdb_remove_breakpoint(uint64_t addr)
     return 0;
 }
 
+int platform_get_regs(platform_vcpu_t vcpu, long *reg) {
+    int ret;
+    uint64_t v;
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RAX, &v);
+    assert(ret == 0);
+    reg[RAX] = v;
 
-void gdb_handle_exception(uint8_t *mem, int vcpufd, int sig)
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RBX, &v);
+    assert(ret == 0);
+    reg[RBX] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RCX, &v);
+    assert(ret == 0);
+    reg[RCX] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RDX, &v);
+    assert(ret == 0);
+    reg[RDX] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RSI, &v);
+    assert(ret == 0);
+    reg[RSI] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RDI, &v);
+    assert(ret == 0);
+    reg[RDI] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RBP, &v);
+    assert(ret == 0);
+    reg[RBP] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RSP, &v);
+    assert(ret == 0);
+    reg[RSP] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_R8, &v);
+    assert(ret == 0);
+    reg[R8] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_R9, &v);
+    assert(ret == 0);
+    reg[R9] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_R10, &v);
+    assert(ret == 0);
+    reg[R10] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_R11, &v);
+    assert(ret == 0);
+    reg[R11] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_R12, &v);
+    assert(ret == 0);
+    reg[R12] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_R13, &v);
+    assert(ret == 0);
+    reg[R13] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_R14, &v);
+    assert(ret == 0);
+    reg[R14] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_R15, &v);
+    assert(ret == 0);
+    reg[R15] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RIP, &v);
+    assert(ret == 0);
+    reg[RIP] = v;
+    
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RFLAGS, &v);
+    assert(ret == 0);
+    reg[EFLAGS] = v;
+    
+    return 0;
+}
+
+void gdb_handle_exception(uint8_t *mem, platform_vcpu_t vcpu, int sig)
 {
     unsigned char *buffer;
     char obuf[4096];
@@ -516,6 +594,10 @@ void gdb_handle_exception(uint8_t *mem, int vcpufd, int sig)
             break;
         }
         case 'g': {
+            int ret;
+            ret = platform_get_regs(vcpu, registers);
+            assert(ret == 0);
+
 #if 0
             struct kvm_regs regs;
             int ret;
@@ -547,11 +629,9 @@ void gdb_handle_exception(uint8_t *mem, int vcpufd, int sig)
             registers[EFLAGS] = regs.rflags;
 
             /* TODO what about others like cs and ss? */
-
-            mem2hex((char *) registers, obuf, NUMREGBYTES);
-
-            putpacket(obuf);
 #endif
+            mem2hex((char *) registers, obuf, NUMREGBYTES);
+            putpacket(obuf);
             break;
         }
         case '?': {
@@ -616,7 +696,7 @@ void gdb_handle_exception(uint8_t *mem, int vcpufd, int sig)
     return;
 }
 
-static void gdb_stub_start(int vcpufd, uint8_t *mem)
+static void gdb_stub_start(platform_vcpu_t vcpu, uint8_t *mem)
 {
     int i;
 
@@ -624,7 +704,7 @@ static void gdb_stub_start(int vcpufd, uint8_t *mem)
         breakpoints[i] = 0;
 
     wait_for_connect(1234);
-    gdb_handle_exception(mem, vcpufd, 0);
+    gdb_handle_exception(mem, vcpu, 0);
 }
 
 
@@ -647,16 +727,16 @@ static int handle_exit(platform_vcpu_t vcpu, uint8_t *mem, void *platform_data)
 static int setup(platform_vcpu_t vcpu, uint8_t *mem)
 {
     int ret;
-
+    uint64_t rflags;
+    
     if (!use_gdb)
         return 0;
 
-    uint64_t ctrls;
-    ret = hv_vmx_vcpu_read_vmcs(vcpu, VMCS_CTRL_CPU_BASED, &ctrls);
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RFLAGS, &rflags);
     assert(ret == 0);
-    ret = hv_vmx_vcpu_write_vmcs(vcpu, VMCS_CTRL_CPU_BASED,
-                                 ctrls | CPU_BASED_MTF);
+    ret = hv_vcpu_write_register(vcpu, HV_X86_RFLAGS, rflags | X86_EFLAGS_TF);
     assert(ret == 0);
+    
     gdb_stub_start(vcpu, mem);
 
     return 0;

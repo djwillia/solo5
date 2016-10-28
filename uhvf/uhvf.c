@@ -406,11 +406,23 @@ static void setup_system_gdt(hv_vcpuid_t vcpu,
     wvmcs(vcpu, VMCS_GUEST_LDTR_AR, 0x00000082);
 }
 
-static void setup_system(hv_vcpuid_t vcpu, uint8_t *mem)
+static void platform_setup_system(hv_vcpuid_t vcpu, uint8_t *mem,
+                                  uint64_t entry)
 {
-        setup_system_gdt(vcpu, mem, BOOT_GDT);
-        setup_system_page_tables(vcpu, mem);
-        setup_system_64bit(vcpu);
+    setup_system_gdt(vcpu, mem, BOOT_GDT);
+    setup_system_page_tables(vcpu, mem);
+    setup_system_64bit(vcpu);
+    
+	wvmcs(vcpu, VMCS_GUEST_RFLAGS, 0x2);
+	wvmcs(vcpu, VMCS_GUEST_RIP, entry);
+    wvmcs(vcpu, VMCS_GUEST_RSP, GUEST_SIZE - 8);
+    wreg(vcpu, HV_X86_RDI, BOOT_INFO);
+
+    /* trap everything for cr0 and cr4 */
+	wvmcs(vcpu, VMCS_CTRL_CR0_MASK, 0xffffffff);
+	wvmcs(vcpu, VMCS_CTRL_CR4_MASK, 0xffffffff);
+	wvmcs(vcpu, VMCS_CTRL_CR0_SHADOW, rvmcs(vcpu, VMCS_GUEST_CR0));
+	wvmcs(vcpu, VMCS_CTRL_CR4_SHADOW, rvmcs(vcpu, VMCS_GUEST_CR4));
 }
 
 static void ukvm_port_puts(uint8_t *mem, uint32_t mem_off)
@@ -428,10 +440,26 @@ static void ukvm_port_time_init(uint8_t *mem, uint32_t mem_off)
     sysctlbyname("machdep.tsc.frequency", &p->freq, &len, NULL, 0);
 }
 
+#define START_TIME                                                      \
+    clock_serv_t cclock;                                                \
+    mach_timespec_t mts;                                                \
+    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);  \
+    clock_get_time(cclock, &mts);                                       \
+    uint64_t _time_s = mts.tv_sec;                                      \
+    uint64_t _time_ns = mts.tv_nsec;                                    
+
+#define END_TIME                                    \
+    clock_get_time(cclock, &mts);                   \
+    mach_port_deallocate(mach_task_self(), cclock); \
+    time_sleeping_s += mts.tv_sec - _time_s;        \
+    time_sleeping_ns += mts.tv_nsec - _time_ns;     
+
 static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
 {
     struct ukvm_poll *t = (struct ukvm_poll *) (mem + mem_off);
     int rc;
+    START_TIME;
+
 #if 0
     int rc, num_fds = 0;
     struct pollfd fds[NUM_MODULES];  /* we only support at most one
@@ -459,14 +487,9 @@ static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
     //rc = poll(fds, num_fds, t->timeout_nsecs);
     //assert(rc >= 0);
 
-    /* START_TIME */
-    clock_serv_t cclock;
-    mach_timespec_t mts;
-    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
-    clock_get_time(cclock, &mts);
-    uint64_t _time_s = mts.tv_sec;
-    uint64_t _time_ns = mts.tv_nsec;
-
+    /* On MacOSX, we should probably use kqueue, as there is no ppoll,
+     * and poll only allows ms granularity timeouts. */
+    
     {
         struct timespec ts;
         
@@ -478,14 +501,131 @@ static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
         nanosleep(&ts, NULL);
     }
 
-    /* END_TIME */
-    clock_get_time(cclock, &mts);
-    mach_port_deallocate(mach_task_self(), cclock);
-    time_sleeping_s += mts.tv_sec - _time_s;
-    time_sleeping_ns += mts.tv_nsec - _time_ns;
+    END_TIME;
     
     t->ret = rc;
 }
+
+#define VMX_CTRLS(v,c,t,f) do {                 \
+    uint64_t cap;                               \
+    if (hv_vmx_read_capability((c), &cap)) {    \
+        abort();                                \
+	}                                           \
+                                                \
+    uint64_t zeros = cap & 0xffffffff;              \
+    uint64_t ones = (cap >> 32) & 0xffffffff;       \
+    uint64_t setting = cap2ctrl(cap, (f));          \
+    if (0) {                                        \
+        printf("%s %s\n", #c, #t);                  \
+        printf("   0s:      0x%08llx\n", zeros);    \
+        printf("   1s:      0x%08llx\n", ones);     \
+        printf("   setting: 0x%08llx\n", setting);  \
+    }                                               \
+    wvmcs((v), (t), setting);                       \
+    } while(0)                                      \
+
+int platform_init(platform_vcpu_t *vcpu_p, uint8_t **mem_p)
+{
+	hv_vcpuid_t vcpu;
+    uint8_t *mem;
+
+    /* create a VM instance for the current task */
+	if (hv_vm_create(HV_VM_DEFAULT)) {
+		abort();
+	}
+
+	/* allocate some guest physical memory */
+	if (!(mem = (uint8_t *)valloc(GUEST_SIZE))) {
+		abort();
+	}
+    memset(mem, 0, GUEST_SIZE);
+
+    /* map a segment of guest physical memory into the guest physical
+	 * address space of the vm (at address 0) */
+	if (hv_vm_map(mem, 0, GUEST_SIZE,
+                  HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC)) {
+        abort();
+    }
+
+	/* create a vCPU instance for this thread */
+	if (hv_vcpu_create(&vcpu, HV_VCPU_DEFAULT)) {
+		abort();
+	}
+
+	/* 
+     * From FreeBSD:
+     *
+	 * It is safe to allow direct access to MSR_GSBASE and MSR_FSBASE.
+	 * The guest FSBASE and GSBASE are saved and restored during
+	 * vm-exit and vm-entry respectively. The host FSBASE and GSBASE are
+	 * always restored from the vmcs host state area on vm-exit.
+	 *
+	 * The SYSENTER_CS/ESP/EIP MSRs are identical to FS/GSBASE in
+	 * how they are saved/restored so can be directly accessed by the
+	 * guest.
+	 *
+	 * MSR_EFER is saved and restored in the guest VMCS area on a
+	 * VM exit and entry respectively. It is also restored from the
+	 * host VMCS area on a VM exit.
+     */
+	if (hv_vcpu_enable_native_msr(vcpu, MSR_GSBASE, 1) ||
+		hv_vcpu_enable_native_msr(vcpu, MSR_FSBASE, 1) ||
+		hv_vcpu_enable_native_msr(vcpu, MSR_SYSENTER_CS_MSR, 1) ||
+		hv_vcpu_enable_native_msr(vcpu, MSR_SYSENTER_ESP_MSR, 1) ||
+		hv_vcpu_enable_native_msr(vcpu, MSR_SYSENTER_EIP_MSR, 1) ||
+        hv_vcpu_enable_native_msr(vcpu, MSR_LSTAR, 1) ||
+        hv_vcpu_enable_native_msr(vcpu, MSR_CSTAR, 1) ||
+        hv_vcpu_enable_native_msr(vcpu, MSR_STAR, 1) ||
+        hv_vcpu_enable_native_msr(vcpu, MSR_SF_MASK, 1) ||
+        hv_vcpu_enable_native_msr(vcpu, MSR_KGSBASE, 1))
+	{
+		abort();
+	}
+    
+    VMX_CTRLS(vcpu, HV_VMX_CAP_PINBASED, VMCS_CTRL_PIN_BASED, 0);
+
+    /* It appears that bit 19 and 20 (CR8 load/store exiting) are
+     * necessary for a bunch of things to work, including
+     * CPU_BASED_HLT (bit 7) and MONITOR_TRAP_FLAG (bit 27) */
+    VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED, VMCS_CTRL_CPU_BASED, 0
+              | CPU_BASED_HLT | CPU_BASED_INVLPG
+              | CPU_BASED_MWAIT | CPU_BASED_RDPMC
+              | CPU_BASED_RDTSC | CPU_BASED_UNCOND_IO
+              | CPU_BASED_CR8_LOAD | CPU_BASED_CR8_STORE
+              | CPU_BASED_CR3_LOAD | CPU_BASED_CR3_STORE);
+    VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED2, VMCS_CTRL_CPU_BASED2, 0
+              | CPU_BASED2_DESC_TABLE | CPU_BASED2_RDRAND);
+    VMX_CTRLS(vcpu, HV_VMX_CAP_ENTRY, VMCS_CTRL_VMENTRY_CONTROLS, 0
+              | VMENTRY_GUEST_IA32E | VMENTRY_LOAD_EFER);
+    VMX_CTRLS(vcpu, HV_VMX_CAP_EXIT, VMCS_CTRL_VMEXIT_CONTROLS, 0);
+              
+    wvmcs(vcpu, VMCS_CTRL_EXC_BITMAP, 0xffffffff);
+
+    *mem_p = mem;
+    *vcpu_p = vcpu;
+    
+    return 0;
+}
+
+void platform_cleanup(platform_vcpu_t vcpu, uint8_t *mem)
+{
+	/* destroy vCPU */
+	if (hv_vcpu_destroy(vcpu)) {
+		abort();
+	}
+
+	/* unmap memory segment at address 0 */
+	if (hv_vm_unmap(0, GUEST_SIZE)) {
+		abort();
+	}
+	/* destroy VM instance of this task */
+	if (hv_vm_destroy()) {
+		abort();
+	}
+
+	free(mem);
+}
+
 
 int platform_run(platform_vcpu_t vcpu,
                  void *platform_data __attribute__((unused)))
@@ -700,6 +840,12 @@ int setup_modules(int vcpufd, uint8_t *mem)
     return 0;
 }
 
+void sig_handler(int signo)
+{
+    printf("Received SIGINT. Exiting\n");
+    exit(0);
+}
+
 static void usage(const char *prog)
 {
     int m;
@@ -714,30 +860,14 @@ static void usage(const char *prog)
     exit(1);
 }
 
-#define VMX_CTRLS(v,c,t,f) do {                 \
-    uint64_t cap;                               \
-    if (hv_vmx_read_capability((c), &cap)) {    \
-        abort();                                \
-	}                                           \
-                                                \
-    uint64_t zeros = cap & 0xffffffff;          \
-    uint64_t ones = (cap >> 32) & 0xffffffff;   \
-    uint64_t setting = cap2ctrl(cap, (f));      \
-    printf("%s %s\n", #c, #t);                  \
-    printf("   0s:      0x%08llx\n", zeros);    \
-    printf("   1s:      0x%08llx\n", ones);     \
-    printf("   setting: 0x%08llx\n", setting);  \
-                                                \
-    wvmcs((v), (t), setting);                   \
-    } while(0)                                  \
-        
-
-
 int main(int argc, char **argv)
 {
     uint64_t elf_entry;
     uint64_t kernel_end;
+
+    platform_vcpu_t vcpu;
 	uint8_t *mem;
+
     const char *prog;
     const char *elffile;
     int matched;
@@ -785,143 +915,26 @@ int main(int argc, char **argv)
         argv++;
     }
 
-#if 0
-    elffile = argv[1];
+    if (signal(SIGINT, sig_handler) == SIG_ERR)
+        err(1, "Can not catch SIGINT");
 
-    if (argc > 2) {
-        int j, matched;
-        argv += 2;
-        argc -= 2;
-
-        matched = 0;
-        for (j = 0; j < NUM_MODULES; j++) {
-            if (!modules[j]->handle_cmdarg(*argv)) {
-                matched = 1;
-                argc--;
-                argv++;
-                break;
-            }
-        }
-    }
-#endif    
-
-	/* create a VM instance for the current task */
-	if (hv_vm_create(HV_VM_DEFAULT)) {
-		abort();
-	}
-
-	/* allocate some guest physical memory */
-	if (!(mem = (uint8_t *)valloc(GUEST_SIZE))) {
-		abort();
-	}
-    memset(mem, 0, GUEST_SIZE);
-
-    /* map a segment of guest physical memory into the guest physical
-	 * address space of the vm (at address 0) */
-	if (hv_vm_map(mem, 0, GUEST_SIZE,
-                  HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC)) {
-        abort();
-    }
-
-	/* create a vCPU instance for this thread */
-	hv_vcpuid_t vcpu;
-	if (hv_vcpu_create(&vcpu, HV_VCPU_DEFAULT)) {
-		abort();
-	}
-
-	/* 
-     * From FreeBSD:
-     *
-	 * It is safe to allow direct access to MSR_GSBASE and MSR_FSBASE.
-	 * The guest FSBASE and GSBASE are saved and restored during
-	 * vm-exit and vm-entry respectively. The host FSBASE and GSBASE are
-	 * always restored from the vmcs host state area on vm-exit.
-	 *
-	 * The SYSENTER_CS/ESP/EIP MSRs are identical to FS/GSBASE in
-	 * how they are saved/restored so can be directly accessed by the
-	 * guest.
-	 *
-	 * MSR_EFER is saved and restored in the guest VMCS area on a
-	 * VM exit and entry respectively. It is also restored from the
-	 * host VMCS area on a VM exit.
-     */
-	if (hv_vcpu_enable_native_msr(vcpu, MSR_GSBASE, 1) ||
-		hv_vcpu_enable_native_msr(vcpu, MSR_FSBASE, 1) ||
-		hv_vcpu_enable_native_msr(vcpu, MSR_SYSENTER_CS_MSR, 1) ||
-		hv_vcpu_enable_native_msr(vcpu, MSR_SYSENTER_ESP_MSR, 1) ||
-		hv_vcpu_enable_native_msr(vcpu, MSR_SYSENTER_EIP_MSR, 1) ||
-        hv_vcpu_enable_native_msr(vcpu, MSR_LSTAR, 1) ||
-        hv_vcpu_enable_native_msr(vcpu, MSR_CSTAR, 1) ||
-        hv_vcpu_enable_native_msr(vcpu, MSR_STAR, 1) ||
-        hv_vcpu_enable_native_msr(vcpu, MSR_SF_MASK, 1) ||
-        hv_vcpu_enable_native_msr(vcpu, MSR_KGSBASE, 1))
-	{
-		abort();
-	}
+    if (platform_init(&vcpu, &mem))
+        err(1, "platform init");
     
-    VMX_CTRLS(vcpu, HV_VMX_CAP_PINBASED, VMCS_CTRL_PIN_BASED, 0);
-
-    /* It appears that bit 19 and 20 (CR8 load/store exiting) are
-     * necessary for a bunch of things to work, including
-     * CPU_BASED_HLT (bit 7) and MONITOR_TRAP_FLAG (bit 27) */
-    VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED, VMCS_CTRL_CPU_BASED, 0
-              | CPU_BASED_HLT | CPU_BASED_INVLPG
-              | CPU_BASED_MWAIT | CPU_BASED_RDPMC
-              | CPU_BASED_RDTSC | CPU_BASED_UNCOND_IO
-              | CPU_BASED_CR8_LOAD | CPU_BASED_CR8_STORE
-              | CPU_BASED_CR3_LOAD | CPU_BASED_CR3_STORE);
-    VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED2, VMCS_CTRL_CPU_BASED2, 0
-              | CPU_BASED2_DESC_TABLE | CPU_BASED2_RDRAND);
-    VMX_CTRLS(vcpu, HV_VMX_CAP_ENTRY, VMCS_CTRL_VMENTRY_CONTROLS, 0
-              | VMENTRY_GUEST_IA32E | VMENTRY_LOAD_EFER);
-    VMX_CTRLS(vcpu, HV_VMX_CAP_EXIT, VMCS_CTRL_VMEXIT_CONTROLS, 0);
-              
-    wvmcs(vcpu, VMCS_CTRL_EXC_BITMAP, 0xffffffff);
-
     load_code(elffile, mem, &elf_entry, &kernel_end);
-    setup_system(vcpu, mem);
+
+    platform_setup_system(vcpu, mem, elf_entry);
     
     /* Setup ukvm_boot_info and command line */
     setup_boot_info(mem, GUEST_SIZE, kernel_end, argc, argv);
 
-	wvmcs(vcpu, VMCS_GUEST_RFLAGS, 0x2);
-	wvmcs(vcpu, VMCS_GUEST_RIP, elf_entry);
-    wvmcs(vcpu, VMCS_GUEST_RSP, GUEST_SIZE - 8);
-    wreg(vcpu, HV_X86_RDI, BOOT_INFO);
-
     if (setup_modules(vcpu, mem))
         errx(1, "couldn't setup modules");
 
-    /* trap everything for cr0 and cr4 */
-	wvmcs(vcpu, VMCS_CTRL_CR0_MASK, 0xffffffff);
-	wvmcs(vcpu, VMCS_CTRL_CR4_MASK, 0xffffffff);
-	wvmcs(vcpu, VMCS_CTRL_CR0_SHADOW, rvmcs(vcpu, VMCS_GUEST_CR0));
-	wvmcs(vcpu, VMCS_CTRL_CR4_SHADOW, rvmcs(vcpu, VMCS_GUEST_CR4));
-
-    
     /* vCPU run loop */
     vcpu_loop(vcpu, NULL, mem);
-    
-	/*
-	 * optional clean-up
-	 */
 
-	/* destroy vCPU */
-	if (hv_vcpu_destroy(vcpu)) {
-		abort();
-	}
-
-	/* unmap memory segment at address 0 */
-	if (hv_vm_unmap(0, GUEST_SIZE)) {
-		abort();
-	}
-	/* destroy VM instance of this task */
-	if (hv_vm_destroy()) {
-		abort();
-	}
-
-	free(mem);
-
+    platform_cleanup(vcpu, mem);
 	return 0;
 }
 

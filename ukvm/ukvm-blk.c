@@ -124,6 +124,7 @@ static char *usage(void)
     return "--disk=IMAGE (file exposed to the unikernel as a raw block device)";
 }
 
+#if 0
 struct ukvm_module ukvm_blk = {
     .get_fd = get_fd,
     .handle_exit = handle_exit,
@@ -131,4 +132,4 @@ struct ukvm_module ukvm_blk = {
     .setup = setup,
     .usage = usage
 };
-
+#endif
