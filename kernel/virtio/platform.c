@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, IBM
+/* Copyright (c) 2016, IBM
  * Author(s): Dan Williams <djwillia@us.ibm.com>
  *
  * Permission to use, copy, modify, and/or distribute this software
@@ -18,9 +18,25 @@
 
 #include "kernel.h"
 
-void solo5_exit(void)
+void platform_exit(void)
 {
-    printf("Mirage on Solo5 exiting... Goodbye!\n");
-    low_level_exit();
-    kernel_hang();
+    /*
+     * There is no way to initiate "shutdown" on virtio without ACPI, so just
+     * halt.
+     */
+    platform_puts("Solo5: Halted\n", 15);
+    cpu_halt();
 }
+
+int platform_puts(const char *buf, int n)
+{
+    int i;
+
+    for (i = 0; i < n; i++)
+        serial_putc(buf[i]);
+
+    return n;
+}
+
+int solo5_console_write(const char *, size_t)
+    __attribute__ ((alias("platform_puts")));

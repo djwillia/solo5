@@ -15,22 +15,25 @@
 # TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-include Makefile.common
+include $(TOP)/Makefile.common
 
 COMMON_COBJS=\
+abort.o \
+cpu.o \
+cpu_vectors.o \
 ee_printf.o \
-interrupts.o \
+intr.o \
 lib.o \
 malloc.o \
-stubs.o \
+exit.o \
 pvclock.o
 
 UKVM_COBJS=\
 ukvm/kernel.o \
 ukvm/gdt.o \
 ukvm/io.o \
-ukvm/low_level.o \
-ukvm/low_level_interrupts.o \
+ukvm/platform.o \
+ukvm/platform_intr.o \
 ukvm/mem.o \
 ukvm/time.o \
 $(COMMON_COBJS)
@@ -38,22 +41,18 @@ $(COMMON_COBJS)
 VIRTIO_COBJS=\
 virtio/boot.o \
 virtio/kernel.o \
-virtio/low_level.o \
-virtio/low_level_interrupts.o \
+virtio/platform.o \
+virtio/platform_intr.o \
 virtio/mem.o \
-virtio/net.o \
 virtio/pci.o \
 virtio/serial.o \
 virtio/time.o \
-virtio/virtio.o \
+virtio/virtio_ring.o \
+virtio/virtio_net.o \
+virtio/virtio_blk.o \
 virtio/tscclock.o \
 virtio/clock_subr.o \
 $(COMMON_COBJS)
-
-SOBJS=\
-kernel_s.o \
-mem_s.o \
-interrupts_s.o
 
 HEADERS=\
 kernel.h
@@ -64,35 +63,20 @@ all: virtio ukvm
 virtio: virtio/solo5.o 
 ukvm: ukvm/solo5.o 
 
-interrupt_vectors.s: interrupts.h
-	bash gen_interrupts.bash > interrupt_vectors.s
-
-%_s.o: %.s interrupt_vectors.s
-	$(AS) $< -o $@
-
 %.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 %.o: %.S $(HEADERS)
 	$(CC) $(CFLAGS) -DASM_FILE -c $< -o $@
 
-virtio/solo5.o: $(VIRTIO_COBJS) $(SOBJS) virtio/solo5.lds
-	$(LD) -r $(LDFLAGS) -o $@ $(VIRTIO_COBJS) $(SOBJS) 
+virtio/solo5.o: $(VIRTIO_COBJS) virtio/solo5.lds
+	$(LD) -r $(LDFLAGS) -o $@ $(VIRTIO_COBJS)
 	$(OBJCOPY) -w -G solo5_\* -G _start $@ $@
 
-ukvm/solo5.o: $(UKVM_COBJS) $(SOBJS) ukvm/solo5.lds
-	$(LD) -r $(LDFLAGS) -o $@ $(UKVM_COBJS) $(SOBJS) 
+ukvm/solo5.o: $(UKVM_COBJS) ukvm/solo5.lds
+	$(LD) -r $(LDFLAGS) -o $@ $(UKVM_COBJS)
 	$(OBJCOPY) -w -G solo5_\* -G _start $@ $@
 
 .PHONY: clean
 clean:
 	$(RM) *.o virtio/*.o ukvm/*.o kernel 
-
-# This target is for the top-level opam-install to get MD CFLAGS
-.PHONY: print-md-cflags
-print-md-cflags:
-	@echo $(MD_CFLAGS)
-
-.PHONY: print-ldflags
-print-ldflags:
-	@echo $(LDFLAGS)

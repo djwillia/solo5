@@ -20,8 +20,6 @@
 #ifndef __UKVM_H__
 #define __UKVM_H__
 
-#define GUEST_SIZE      0x20000000 /* 512 MBs */
-
 struct ukvm_boot_info {
     uint64_t mem_size;		/* Memory size in bytes */
     uint64_t kernel_end;	/* Address of end of kernel */
@@ -39,9 +37,8 @@ static inline uint32_t ukvm_ptr(volatile void *p)
 	return (uint32_t)((uint64_t)p & 0xffffffff);
 }
 
-#define UKVM_PORT_CHAR      0x3f8
 #define UKVM_PORT_PUTS      0x499
-#define UKVM_PORT_NANOSLEEP 0x500
+/* was UKVM_PORT_NANOSLEEP 0x500 */
 
 #define UKVM_PORT_BLKINFO   0x502
 #define UKVM_PORT_BLKWRITE  0x503
@@ -51,21 +48,108 @@ static inline uint32_t ukvm_ptr(volatile void *p)
 #define UKVM_PORT_NETWRITE  0x506
 #define UKVM_PORT_NETREAD   0x507
 
-#define UKVM_PORT_DBG_STACK 0x508
+/* was UKVM_PORT_DBG_STACK 0x508 */
 
 #define UKVM_PORT_POLL      0x509
-
 #define UKVM_PORT_TIME_INIT 0x50a
 
+/*
+ * Guest-provided pointers in UKVM I/O operations MUST be declared with
+ * UKVM_GUEST_PTR(type), where type is the desired guest-side pointer type.
+ *
+ * This ensures that these pointers are not directly dereferencable on the host
+ * (ukvm) side.
+ */
+#ifdef __UKVM_HOST__
+#define UKVM_GUEST_PTR(T) uint64_t
+#else
+#define UKVM_GUEST_PTR(T) T
+#endif
 
 /* UKVM_PORT_PUTS */
 struct ukvm_puts {
 	/* IN */
-	char *data;
-	int len;
+	UKVM_GUEST_PTR(const char *) data;
+	size_t len;
 };
 
-/* UKVM_PORT_PUTS */
+/* UKVM_PORT_BLKINFO */
+struct ukvm_blkinfo {
+	/* OUT */
+	size_t sector_size;
+	size_t num_sectors;
+	int rw;
+};
+
+/* UKVM_PORT_BLKWRITE */
+struct ukvm_blkwrite {
+	/* IN */
+	size_t sector;
+	UKVM_GUEST_PTR(const void *) data;
+	size_t len;
+
+	/* OUT */
+	int ret;
+};
+
+/* UKVM_PORT_BLKREAD */
+struct ukvm_blkread {
+	/* IN */
+	size_t sector;
+	UKVM_GUEST_PTR(void *) data;
+
+	/* IN/OUT */
+	size_t len;
+
+	/* OUT */
+	int ret;
+};
+
+/* UKVM_PORT_NETINFO */
+struct ukvm_netinfo {
+	/* OUT */
+	char mac_str[18];
+};
+
+/* UKVM_PORT_NETWRITE */
+struct ukvm_netwrite {
+	/* IN */
+	UKVM_GUEST_PTR(const void *) data;
+	size_t len;
+
+	/* OUT */
+	int ret;
+};
+
+/* UKVM_PORT_NETREAD */
+struct ukvm_netread {
+	/* IN */
+	UKVM_GUEST_PTR(void *) data;
+
+	/* IN/OUT */
+	size_t len;
+
+	/* OUT */
+	int ret;
+};
+
+/*
+ * UKVM_PORT_POLL: Block until timeout_nsecs have passed or I/O is possible,
+ * whichever is sooner. Returns 1 if I/O is possible, otherwise 0.
+ *
+ * TODO: Extend this interface to select which I/O events are of interest.
+ */
+struct ukvm_poll {
+    /* IN */
+    uint64_t timeout_nsecs;
+
+    /* OUT */
+    int ret;
+};
+
+
+#if 0
+/* UKVM_PORT_TIME_INIT */
 struct ukvm_time_init {
 	/* OUT */
 	uint64_t freq;
@@ -87,80 +171,8 @@ struct ukvm_nanosleep {
 struct ukvm_clkspeed {
 	/* OUT */
 	uint64_t clkspeed;
-};
+#endif
 
-/* UKVM_PORT_BLKINFO */
-struct ukvm_blkinfo {
-	/* OUT */
-	int sector_size;
-	uint64_t num_sectors;
-	int rw;
-};
-
-/* UKVM_PORT_BLKWRITE */
-struct ukvm_blkwrite {
-	/* IN */
-	uint64_t sector;
-	void *data;
-	int len;
-
-	/* OUT */
-	int ret;
-};
-
-/* UKVM_PORT_BLKREAD */
-struct ukvm_blkread {
-	/* IN */
-	uint64_t sector;
-	void *data;
-
-	/* IN/OUT */
-	int len;
-
-	/* OUT */
-	int ret;
-};
-
-/* UKVM_PORT_NETINFO */
-struct ukvm_netinfo {
-	/* OUT */
-	char mac_str[18];
-};
-
-/* UKVM_PORT_NETWRITE */
-struct ukvm_netwrite {
-	/* IN */
-	void *data;
-	int len;
-
-	/* OUT */
-	int ret;
-};
-
-/* UKVM_PORT_NETREAD */
-struct ukvm_netread {
-	/* IN */
-	void *data;
-
-	/* IN/OUT */
-	int len;
-
-	/* OUT */
-	int ret;
-};
-
-/*
- * UKVM_PORT_POLL: Block until timeout_nsecs have passed or I/O is possible,
- * whichever is sooner. Returns 1 if I/O is possible, otherwise 0.
- *
- * TODO: Extend this interface to select which I/O events are of interest.
- */
-struct ukvm_poll {
-    /* IN */
-    uint64_t timeout_nsecs;
-
-    /* OUT */
-    int ret;
-};
 
 #endif
+

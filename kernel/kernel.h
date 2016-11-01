@@ -59,26 +59,41 @@
 #define STR_EXPAND(y) #y
 #define STR(x) STR_EXPAND(x)
 
-/* kernel.s: hang kernel, or hlt for interrupts */
-void kernel_hang(void) __attribute__((noreturn));
-void kernel_wait(void);
-void kernel_waitloop(void);
-void kernel_busyloop(void);
-void kernel_postboot(void);
+/* abort.c */
+void _assert_fail(const char *, const char *, const char *)
+    __attribute__((noreturn));
+void _abort(const char *, const char *, const char *)
+    __attribute__((noreturn));
 
-/* interrupts.c: interrupt handling */
-void interrupts_init(void);
-void interrupts_enable(void);
-void interrupts_disable(void);
-void irq_mask(uint8_t irq);
-void irq_clear(uint8_t irq);
-extern int spldepth;
+#define PANIC(s)                            \
+    do {                                    \
+        _abort(__FILE__, STR(__LINE__), s); \
+    } while (0)
 
-/* mem.c, mem.s: low-level page alloc routines */
+#define assert(e)                                      \
+    do {                                               \
+        if (!(e))                                      \
+            _assert_fail(__FILE__, STR(__LINE__), #e); \
+    } while (0)
+
+/* cpu.S: low-level CPU functions */
+void cpu_halt(void) __attribute__((noreturn));
+void cpu_tss_load(uint16_t);
+void cpu_idt_load(uint64_t);
+void cpu_gdt_load(uint64_t);
+void cpu_sse_enable(void);
+uint64_t cpu_rdtsc(void);
+
+/* intr.c: interrupt handling */
+void intr_init(void);
+void intr_enable(void);
+void intr_disable(void);
+void intr_register_irq(unsigned irq, int (*handler)(void *), void *arg);
+extern int intr_depth;
+
+/* mem.c: low-level page alloc routines */
 uint64_t mem_max_addr(void);
-uint64_t read_cr3(void);
 void *sbrk(intptr_t increment);
-void sse_enable(void);
 
 /* malloc.c: memory allocation */
 void *malloc(size_t bytes);
@@ -89,7 +104,6 @@ void *memalign(size_t alignment, size_t bytes);
 
 /* time.c: clocksource */
 void time_init(void);
-uint64_t rdtsc(void);
 
 /* ee_printf.c: a third-party printf slightly modified and with
  *              snprintf added
@@ -106,31 +120,15 @@ int memcmp(const void *s1, const void *s2, size_t n);
 char *strcpy(char *dst, const char *src);
 size_t strlen(const char *s);
 
-/* pci.c: only enumerate for now */
-void pci_enumerate(void);
+/* platform.c: specifics for ukvm or virito platform */
+void platform_exit(void) __attribute__((noreturn));
+int platform_puts(const char *buf, int n);
 
-/* virtio.c: mostly net for now */
-void virtio_config_network(uint16_t base);
-void virtio_config_block(uint16_t base);
-
-extern uint8_t virtio_net_mac[];
-uint8_t *virtio_net_pkt_get(int *size);  /* get a pointer to recv'd data */
-void virtio_net_pkt_put(void);      /* we're done with recv'd data */
-int virtio_net_xmit_packet(void *data, int len);
-int virtio_net_pkt_poll(void);      /* test if packet(s) are available */
-
-void handle_virtio_interrupt(void);
-
-/* net.c: ping for now */
-void ping_serve(void);
-
-/* low_level.c: specifics for ukvm or virito target */
-void low_level_exit(void);
-int low_level_puts(char *buf, int n);
-
-void low_level_handle_irq(int irq);
-void low_level_handle_intr(int num);
-void low_level_interrupts_init(void);
+/* platform_intr.c: platform-specific interrupt handling */
+void platform_intr_init(void);
+void platform_intr_clear_irq(unsigned irq);
+void platform_intr_mask_irq(unsigned irq);
+void platform_intr_ack_irq(unsigned irq);
 
 /* pvclock.c: KVM paravirtualized clock */
 int pvclock_init(void);
@@ -201,30 +199,12 @@ static inline uint64_t mul64_32(uint64_t a, uint32_t b)
 /* compiler-only memory "barrier" */
 #define cc_barrier() __asm__ __volatile__("" : : : "memory")
 
-#define PANIC(x...) do {                                   \
-        printf("PANIC: %s:%d\n", __FILE__, __LINE__);      \
-        printf(x);                                         \
-        kernel_hang();                                     \
-    } while (0)
-
-#define assert(e) do {                              \
-        if (!(e))                                   \
-            PANIC("assertion failed: \"%s\"", #e);  \
-    } while (0)
-
-#define dprintf(x...) do {                      \
-        if (dbg) {                              \
-            printf(x);                          \
-        }                                       \
-    } while (0)
-
 /* should only use outside of interrupt context */
 #define atomic_printf(x...) do {                      \
-        interrupts_disable();                         \
+        intr_disable();                               \
         printf(x);                                    \
-        interrupts_enable();                          \
+        intr_enable();                                \
     } while (0)
-
 
 #define NSEC_PER_SEC	1000000000ULL
 

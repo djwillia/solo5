@@ -127,7 +127,7 @@ static inline uint8_t rtc_read(uint8_t reg) {
 static uint64_t rtc_gettimeofday(void) {
     struct bmk_clock_ymdhms dt;
 
-    interrupts_disable();
+    intr_disable();
 
     /*
      * If RTC_UIP is down, we have at least 244us to obtain a
@@ -143,7 +143,7 @@ static uint64_t rtc_gettimeofday(void) {
     dt.dt_mon = bcdtobin(rtc_read(RTC_MONTH));
     dt.dt_year = bcdtobin(rtc_read(RTC_YEAR)) + 2000;
 
-    interrupts_enable();
+    intr_enable();
 
     return clock_ymdhms_to_secs(&dt) * NSEC_PER_SEC;
 }
@@ -157,7 +157,7 @@ uint64_t tscclock_monotonic(void) {
     /*
      * Update time_base (monotonic time) and tsc_base (TSC time).
      */
-    tsc_now = rdtsc();
+    tsc_now = cpu_rdtsc();
     tsc_delta = tsc_now - tsc_base;
     time_base += mul64_32(tsc_delta, tsc_mult);
     tsc_base = tsc_now;
@@ -187,10 +187,10 @@ int tscclock_init(void) {
      * Calculate TSC frequency by calibrating against an 0.1s delay
      * using the i8254 timer.
      */
-    tsc_base = rdtsc();
+    tsc_base = cpu_rdtsc();
     i8254_delay(100000);
-    tsc_freq = (rdtsc() - tsc_base) * 10;
-    printf("TSC frequency estimate is %lu Hz\n",
+    tsc_freq = (cpu_rdtsc() - tsc_base) * 10;
+    printf("Solo5: Clock source: TSC, frequency estimate is %lu Hz\n",
         (unsigned long long)tsc_freq);
 
     /*
@@ -236,9 +236,9 @@ void cpu_block(uint64_t until) {
     uint64_t now, delta_ns;
     uint64_t delta_ticks;
     unsigned int ticks;
-    int s;
+    int d;
 
-    assert(spldepth > 0);
+    assert(intr_depth > 0);
 
     /*
      * Return if called too late.  Doing do ensures that the time
@@ -293,11 +293,11 @@ void cpu_block(uint64_t until) {
      * able to distinguish if the interrupt was the PIT interrupt
      * and no other, but this will do for now.
      */
-     s = spldepth;
-     spldepth = 0;
+     d = intr_depth;
+     intr_depth = 0;
      __asm__ __volatile__(
          "sti;\n"
          "hlt;\n"
          "cli;\n");
-     spldepth = s;
+     intr_depth = d;
 }

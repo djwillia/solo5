@@ -18,17 +18,14 @@
 
 #include "kernel.h"
 
-static void banner(void)
+void _start(struct ukvm_boot_info *bi)
 {
+    int ret;
+
     printf("            |      ___|\n");
     printf("  __|  _ \\  |  _ \\ __ \\\n");
     printf("\\__ \\ (   | | (   |  ) |\n");
     printf("____/\\___/ _|\\___/____/\n");
-}
-
-void _start(struct ukvm_boot_info *bi)
-{
-    int ret;
 
     /* It appears that on macosx Hypervisor.framework, the mxcsr is
      * not started with its default value of 0x1f80.  This results in
@@ -44,22 +41,18 @@ void _start(struct ukvm_boot_info *bi)
     unsigned default_mxcsr = 0x1f80;
     __asm__ __volatile__("ldmxcsr %0\n" : : "m"(default_mxcsr));
 
-    banner();
-    printf("mem_size=%lx, kernel_end=%lx\n", bi->mem_size, bi->kernel_end);
-
     //gdt_init();
-    //interrupts_init();
-    //interrupts_enable();
-
     mem_init(bi->mem_size, bi->kernel_end);
+    //intr_init();
 
     /* for floating point */
-    //sse_enable();
+    //cpu_sse_enable();
     time_init();
 
-    ret = solo5_app_main((char *)bi->cmdline);
-    printf("solo5_app_main() returned with %d\n", ret);
+    intr_enable();
 
-    printf("Kernel done.\nGoodbye!\n");
-    kernel_hang();
+    ret = solo5_app_main((char *)bi->cmdline);
+    printf("Solo5: solo5_app_main() returned with %d\n", ret);
+
+    platform_exit();
 }

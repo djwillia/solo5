@@ -43,9 +43,16 @@ uint64_t solo5_clock_wall(void)
         return tscclock_monotonic() + tscclock_epochoffset();
 }
 
+static int timer_handler(void *arg __attribute__((unused)))
+{
+    /* Yes, we handled the irq. */
+    return 1;
+}
+
 /* must be called before interrupts are enabled */
 void time_init(void)
 {
+    intr_register_irq(0, timer_handler, NULL);
     use_pvclock = !pvclock_init();
 
     if (!use_pvclock)
@@ -61,7 +68,7 @@ int solo5_poll(uint64_t until_nsecs)
      * the PIT can be run in "one shot" mode. Loop until either I/O is possible
      * or the desired time has been reached.
      */
-    interrupts_disable();
+    intr_disable();
     do {
         if (virtio_net_pkt_poll()) {
             rc = 1;
@@ -72,7 +79,7 @@ int solo5_poll(uint64_t until_nsecs)
     } while (solo5_clock_monotonic() < until_nsecs);
     if (!rc)
         rc = virtio_net_pkt_poll();
-    interrupts_enable();
+    intr_enable();
 
     return rc;
 }

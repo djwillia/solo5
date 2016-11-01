@@ -54,8 +54,8 @@ struct pvclock_wall_clock {
  * TODO: These should be pointers (for Xen HVM support), but we can't use
  * bmk_pgalloc() here.
  */
-volatile struct pvclock_vcpu_time_info pvclock_ti;
-volatile struct pvclock_wall_clock pvclock_wc;
+static volatile struct pvclock_vcpu_time_info pvclock_ti;
+static volatile struct pvclock_wall_clock pvclock_wc;
 
 static inline void
 x86_cpuid(uint32_t level, uint32_t *eax_out, uint32_t *ebx_out,
@@ -81,7 +81,7 @@ uint64_t pvclock_monotonic(void) {
     do {
         version = pvclock_ti.version;
         __asm__ ("mfence" ::: "memory");
-        delta = rdtsc() - pvclock_ti.tsc_timestamp;
+        delta = cpu_rdtsc() - pvclock_ti.tsc_timestamp;
         if (pvclock_ti.tsc_shift < 0)
             delta >>= -pvclock_ti.tsc_shift;
         else
@@ -134,7 +134,7 @@ int pvclock_init(void) {
         return 1;
     }
 
-    printf("Initializing the KVM Paravirtualized clock.\n");
+    printf("Solo5: Clock source: KVM paravirtualized clock\n");
 
     __asm__ __volatile("wrmsr" ::
         "c" (msr_kvm_system_time),

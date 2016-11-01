@@ -18,16 +18,19 @@
 
 #include "kernel.h"
 
-/* in stubs.c */
-void low_level_exit(void)
+void platform_exit(void)
 {
+    /*
+     * Halt will cause an exit (as in "shutdown") on ukvm.
+     */
+    cpu_halt();
 }
 
-int low_level_puts(char *buf, int n)
+int platform_puts(const char *buf, int n)
 {
     struct ukvm_puts str;
 
-    str.data = buf;
+    str.data = (char *)buf;
     str.len = n;
 
     outl(UKVM_PORT_PUTS, ukvm_ptr(&str));
@@ -36,4 +39,4 @@ int low_level_puts(char *buf, int n)
 }
 
 int solo5_console_write(const char *, size_t)
-    __attribute__ ((alias("low_level_puts")));
+    __attribute__ ((alias("platform_puts")));

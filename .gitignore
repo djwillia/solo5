@@ -1,10 +1,9 @@
 *.o
 *.swp
 *.pcap
+Makeconf
 cscope.*
-iso/boot/kernel
-kernel/kernel
-kernel/interrupt_vectors.s
+include-host/
 tests/*/*.ukvm
 tests/*/*.virtio
 tests/*/ukvm-bin

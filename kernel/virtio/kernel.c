@@ -35,7 +35,7 @@ void kernel_main(uint32_t arg)
     printf("____/\\___/ _|\\___/____/\n");
 
     if (!gdb)
-        printf("looping for gdb\n");
+        printf("Solo5: Waiting for gdb...\n");
     while (gdb == 0)
         ;
 
@@ -63,7 +63,7 @@ void kernel_main(uint32_t arg)
 
         if (cmdline_len >= sizeof(cmdline)) {
             cmdline_len = sizeof(cmdline) - 1;
-            printf("kernel_main: warning: command line too long, truncated\n");
+            printf("Solo5: warning: command line too long, truncated\n");
         }
         memcpy(cmdline, mi_cmdline, cmdline_len);
     } else {
@@ -82,18 +82,17 @@ static void kernel_main2(void)
 {
     int ret;
 
-    interrupts_init();
+    intr_init();
     /* ocaml needs floating point */
-    sse_enable();
+    cpu_sse_enable();
     time_init();
 
     pci_enumerate();
 
-    interrupts_enable();
+    intr_enable();
 
     ret = solo5_app_main(cmdline);
-    printf("solo5_app_main() returned with %d\n", ret);
+    printf("Solo5: solo5_app_main() returned with %d\n", ret);
 
-    printf("Kernel done.\nGoodbye!\n");
-    kernel_hang();
+    platform_exit();
 }
