@@ -13,6 +13,15 @@ https://github.com/djwillia/dockerfiles.
 At the moment, uhvf can do the Solo5 hello test and also run the Mirage
 console test (from mirage-skeleton).
 
+- need to implement modules: net, blk, gdb (is it finished?)
+
+- KVM doesn't allow a trap on `rdtsc` but it should if we want to use
+  the same interface for ukvm and uhvf (for e.g., det replay)
+
+- `uhvf.c` and `ukvm-core.c` share a bunch of code; there should be a
+  common part and a platform specific part at some point.
+
+
 Older notes:
 
 - It looks like the PVCLOCK can be completely removed from the ukvm

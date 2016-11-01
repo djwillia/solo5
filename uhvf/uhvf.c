@@ -36,7 +36,7 @@
 #include "specialreg.h"
 
 #include <sys/sysctl.h>
-#include <sys/poll.h>
+#include <sys/select.h>
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>
 
@@ -471,49 +471,30 @@ static void ukvm_port_time_init(uint8_t *mem, uint32_t mem_off)
 static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
 {
     struct ukvm_poll *t = (struct ukvm_poll *) (mem + mem_off);
-    int rc;
+
+    struct timespec ts;
+    int rc, i, num_fds = 0;
+    fd_set readfds;
     START_TIME;
 
-#if 0
-    int rc, num_fds = 0;
-    struct pollfd fds[NUM_MODULES];  /* we only support at most one
-                                      * instance per module for now
-                                      */
-
+    FD_ZERO(&readfds);
     for (i = 0; i < NUM_MODULES; i++) {
         int fd = modules[i]->get_fd();
 
         if (fd) {
-            fds[num_fds].fd = fd;
-            fds[num_fds].events = POLLIN;
+            FD_SET(fd, &readfds);
             num_fds += 1;
         }
     }
-
     ts.tv_sec = t->timeout_nsecs / 1000000000ULL;
     ts.tv_nsec = t->timeout_nsecs % 1000000000ULL;
-#endif
 
     /*
      * Guest execution is blocked during the poll() call, note that
      * interrupts will not be injected.
      */
-    //rc = poll(fds, num_fds, t->timeout_nsecs);
-    //assert(rc >= 0);
-
-    /* On MacOSX, we should probably use kqueue, as there is no ppoll,
-     * and poll only allows ms granularity timeouts. */
-    
-    {
-        struct timespec ts;
-        
-        rc = 0;
-        ts.tv_sec = t->timeout_nsecs / 1000000000ULL;
-        ts.tv_nsec = t->timeout_nsecs % 1000000000ULL;
-
-        //printf("sleeping for %ld s (%ld ns)\n", ts.tv_sec, ts.tv_nsec);
-        nanosleep(&ts, NULL);
-    }
+    rc = pselect(num_fds, &readfds, NULL, NULL, &ts, NULL);
+    assert(rc >= 0);
 
     END_TIME;
     
