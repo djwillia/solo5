@@ -119,8 +119,12 @@ static void ukvm_port_netread(uint8_t *mem, uint64_t paddr)
     rd->ret = 0;
 }
 
-static int handle_exit(struct kvm_run *run, int vcpufd, uint8_t *mem)
+//static int handle_exit(struct kvm_run *run, int vcpufd, uint8_t *mem, void *platform_data)
+static int handle_exit(platform_vcpu_t vcpu, uint8_t *mem,
+                       void *platform_data)
 {
+    struct kvm_run *run = (struct kvm_run *)platform_data;
+
     if ((run->exit_reason != KVM_EXIT_IO) ||
         (run->io.direction != KVM_EXIT_IO_OUT) ||
         (run->io.size != 4))
@@ -154,7 +158,7 @@ static int handle_cmdarg(char *cmdarg)
     return 0;
 }
 
-static int setup(int vcpufd, uint8_t *mem)
+static int setup(platform_vcpu_t vcpu, uint8_t *mem)
 {
     char tun_name[IFNAMSIZ];
 

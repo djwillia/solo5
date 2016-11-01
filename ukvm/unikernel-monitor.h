@@ -21,7 +21,7 @@ typedef uint64_t platform_vcpu_t;
 int platform_run(platform_vcpu_t vcpu, void *platform_data);
 int platform_get_exit_reason(platform_vcpu_t vcpu, void *platform_data);
 int platform_get_io_port(platform_vcpu_t vcpu, void *platform_data);
-uint32_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data);
+uint64_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data);
 void platform_advance_rip(platform_vcpu_t vcpu, void *platform_data);
 
 #endif

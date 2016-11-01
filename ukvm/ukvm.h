@@ -148,13 +148,13 @@ struct ukvm_poll {
 };
 
 
-#if 0
 /* UKVM_PORT_TIME_INIT */
 struct ukvm_time_init {
 	/* OUT */
 	uint64_t freq;
 };
 
+#if 0
 /* UKVM_PORT_NANOSLEEP */
 struct ukvm_nanosleep {
 	/* IN */

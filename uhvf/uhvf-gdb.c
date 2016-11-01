@@ -104,10 +104,11 @@
 #include <netdb.h>
 #include <assert.h>
 
-#include "processor-flags.h"
+#include "ukvm-private.h"
+#include "ukvm-modules.h"
+#include "ukvm-cpu.h"
 #include "ukvm.h"
 #include "unikernel-monitor.h"
-#include "../ukvm/ukvm_modules.h"
 
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>

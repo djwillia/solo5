@@ -47,12 +47,11 @@
 #endif
 
 /* from ukvm */
+#include "ukvm-private.h"
+#include "ukvm-modules.h"
+#include "ukvm-cpu.h"
 #include "ukvm.h"
-#include "misc.h"
-#include "processor-flags.h"
-
 #include "unikernel-monitor.h"
-#include "../ukvm/ukvm_modules.h"
 
 struct ukvm_module *modules[] = {
 #ifdef UKVM_MODULE_BLK
@@ -244,6 +243,19 @@ static void load_code(const char *file, uint8_t *mem,     /* IN */
     if (numb < 0 || (size_t) numb != sizeof(Elf64_Ehdr))
         err(1, "unable to read ELF64 hdr");
 
+    /*
+     * Validate program is in ELF64 format:
+     * 1. EI_MAG fields 0, 1, 2, 3 spell ELFMAG('0x7f', 'E', 'L', 'F'),
+     * 2. File contains 64-bit objects,
+     * 3. Objects are Executable,
+     * 4. Target instruction set architecture is set to x86_64.
+     */
+    if (hdr.e_ident[EI_MAG0] != ELFMAG0 || hdr.e_ident[EI_MAG1] != ELFMAG1 || \
+        hdr.e_ident[EI_MAG2] != ELFMAG2 || hdr.e_ident[EI_MAG3] != ELFMAG3 || \
+        hdr.e_ident[EI_CLASS] != ELFCLASS64 || hdr.e_type != ET_EXEC || \
+        hdr.e_machine != EM_X86_64)
+        errx(1, "%s is in invalid ELF64 format.", file);
+
     ph_off = hdr.e_phoff;
     ph_entsz = hdr.e_phentsize;
     ph_cnt = hdr.e_phnum;
@@ -284,7 +296,7 @@ static void load_code(const char *file, uint8_t *mem,     /* IN */
         memset(mem + paddr + filesz, 0, memsz - filesz);
 
         /* Protect the executable code */
-        if (phdr[ph_i].p_flags & ELF_SEGMENT_X)
+        if (phdr[ph_i].p_flags & PF_X)
             mprotect((void *) dst, memsz, PROT_EXEC | PROT_READ);
 
         _end = ALIGN_UP(paddr + memsz, align);
@@ -425,11 +437,13 @@ static void platform_setup_system(hv_vcpuid_t vcpu, uint8_t *mem,
 	wvmcs(vcpu, VMCS_CTRL_CR4_SHADOW, rvmcs(vcpu, VMCS_GUEST_CR4));
 }
 
-static void ukvm_port_puts(uint8_t *mem, uint32_t mem_off)
+void ukvm_port_puts(uint8_t *mem, uint64_t paddr)
 {
-    struct ukvm_puts *p = (struct ukvm_puts *) (mem + mem_off);
+    GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_puts));
+    struct ukvm_puts *p = (struct ukvm_puts *)(mem + paddr);
 
-    printf("%.*s", p->len, (char *) (mem + (uint64_t) p->data));
+    GUEST_CHECK_PADDR(p->data, GUEST_SIZE, p->len);
+    assert(write(1, mem + p->data, p->len) != -1);
 }
 
 static void ukvm_port_time_init(uint8_t *mem, uint32_t mem_off)
@@ -707,10 +721,10 @@ int platform_get_io_port(platform_vcpu_t vcpu, void *platform_data)
 
     return port;
 }
-uint32_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data)
+uint64_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data)
 {
     uint64_t rax = rreg(vcpu, HV_X86_RAX);
-    return (uint32_t)rax;
+    return rax;
 }
 void platform_advance_rip(platform_vcpu_t vcpu, void *platform_data)
 {
@@ -786,7 +800,7 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
         }
         case EXIT_IO: {
             int port = platform_get_io_port(vcpu, platform_data);
-            uint32_t data = platform_get_io_data(vcpu, platform_data);
+            uint64_t data = platform_get_io_data(vcpu, platform_data);
 
             switch (port) {
             case UKVM_PORT_PUTS:

@@ -205,7 +205,7 @@ static void load_code(const char *file, uint8_t *mem,     /* IN */
     ph_cnt = hdr.e_phnum;
     buflen = ph_entsz * ph_cnt;
 
-    phdr = malloc(buflen);
+    phdr = (Elf64_Phdr *)malloc(buflen);
     if (!phdr)
         err(1, "unable to allocate program header buffer\n");
 

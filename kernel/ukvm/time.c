@@ -31,7 +31,7 @@ void time_init(void)
 
 uint64_t solo5_clock_monotonic(void)
 {
-    return rdtsc() * 1000000000ULL / freq;
+    return cpu_rdtsc() * 1000000000ULL / freq;
 }
 
 /* return wall time in nsecs */
