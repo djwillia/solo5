@@ -6,13 +6,14 @@ is shared.
 
 Solo5 doesn't build properly in OSX yet (although @hannesm has done a
 bunch of work to make it build on FreeBSD, so I don't think it's far
-off), so I build using Docker for Mac with a simple build container:
+off), so I build using Docker for Mac with a simple build container. I
+also use containers to build Mirage unikernels.  See
+https://github.com/djwillia/dockerfiles.
 
-    docker run --rm -v "$PWD:/src" solo5-make
+At the moment, uhvf can do the Solo5 hello test and also run the Mirage
+console test (from mirage-skeleton).
 
-At the moment, it boots the unikernel, but stops at the PVCLOCK stuff,
-as that is a KVM abstraction.
-
+Older notes:
 
 - It looks like the PVCLOCK can be completely removed from the ukvm
   parts of Solo5, as long as we change the poll hypercall to send the
@@ -21,10 +22,6 @@ as that is a KVM abstraction.
 - All interrupt handlers can be removed from the solo5 parts of ukvm
   because we get to see what exception happened in uhvf
 
-- Remove sse from solo5
-
-- HLT isn't exiting (it looks like my Macbook VMX does not expose that
-  capability), so we'll probably need a HLT hypercall.
 
 
 
