@@ -1,7 +1,7 @@
 #ifndef __UKVM_MODULES_H__
 #define __UKVM_MODULES_H__
 
-#include "../uhvf/unikernel-monitor.h"
+#include "unikernel-monitor.h"
 
 /* hypercall interfaces exported by modules are in ukvm.h */
 
