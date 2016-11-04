@@ -751,42 +751,21 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
         }
         case EXIT_RDTSC: {
             uint64_t exec_time;
-            static uint64_t last_exec_time;
-            static uint64_t last_time_sleeping;
+            uint64_t time_sleeping;
             uint64_t new_tsc;
-            static uint64_t last_tsc;
-            static double last_tsc_f;
+            double tsc_f;
+            
             if (hv_vcpu_get_exec_time(vcpu, &exec_time)) 
                 errx(1, "couldn't get exec time");
 
-            uint64_t exec_time_s = exec_time / 1000000000ULL;
-            //uint64_t exec_time_ns = exec_time - (exec_time_s * 1000000000ULL);
-            uint64_t exec_time_ns = exec_time % 1000000000ULL;
-
-            assert(last_exec_time < exec_time);
-            last_exec_time = exec_time;
-
-            assert(exec_time_s * 1000000000ULL + exec_time_ns == exec_time);
+            time_sleeping = ((time_sleeping_s * 1000000000ULL) + time_sleeping_ns);
+            tsc_f = (((double)exec_time + (double)time_sleeping)
+                     * (double)tsc_freq) / 1000000000ULL;
             
-            exec_time_s += time_sleeping_s;
-            exec_time_ns += time_sleeping_ns;
-
-            assert(time_sleeping_s * 1000000000ULL + time_sleeping_ns >= last_time_sleeping);     
-            last_time_sleeping = time_sleeping_s * 1000000000ULL + time_sleeping_ns;
-
-            double tsc_f = (((double)exec_time + (double)last_time_sleeping) * (double)tsc_freq)/1000000000ULL;
-            
-            new_tsc = exec_time_s * tsc_freq;
-            new_tsc += (exec_time_ns * tsc_freq / 1000000000ULL);
-            assert(tsc_f > last_tsc_f);
-            last_tsc_f = tsc_f;
-
             new_tsc = (uint64_t)tsc_f;
             
             {
-                if (new_tsc <= last_tsc)
-                    printf("tsc: new=0x%llx(%llu) last=0x%llx(%llu)\n",
-                           new_tsc, new_tsc, last_tsc, last_tsc);
+                static uint64_t last_tsc;
                 assert(new_tsc > last_tsc);
                 last_tsc = new_tsc;
             }

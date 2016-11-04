@@ -17,9 +17,7 @@ mirage-skeleton).  Things left to do:
 - need to implement other modules: blk, gdb (is it finished?)
 
 - KVM doesn't allow a trap on `rdtsc` but it should if we want to use
-  the same interface for ukvm and uhvf (for e.g., det replay).  Need
-  to clean up current RDTSC emulation as there is lots of debug there
-  still.
+  the same interface for ukvm and uhvf (for e.g., det replay).  
 
 - `uhvf.c` and `ukvm-core.c` share a bunch of code; there should be a
   common part and a platform specific part at some point.  The same
