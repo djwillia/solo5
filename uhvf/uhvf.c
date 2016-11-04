@@ -649,6 +649,12 @@ int platform_get_exit_reason(platform_vcpu_t vcpu,
         uint32_t irq_info = rvmcs(vcpu, VMCS_RO_VMEXIT_IRQ_INFO);
         uint32_t irq_error = rvmcs(vcpu, VMCS_RO_VMEXIT_IRQ_ERROR);
 
+        /* irq && HW exception && #DB */
+        if (irq_info
+            && (((irq_info >> 8) & 0x3) == 3)
+            && ((irq_info & 0xff) == 1))
+            return EXIT_DEBUG;
+            
         printf("EXIT_REASON_EXCEPTION\n");
         if (idt_vector_info) {
             printf("idt_vector_info = 0x%x\n", idt_vector_info);

@@ -12,16 +12,13 @@ https://github.com/djwillia/dockerfiles.
 
 At the moment, uhvf can do the Solo5 hello test and ping_serve test
 and also run the Mirage console, stackv4, and block test (from
-mirage-skeleton).  Things left to do:
+mirage-skeleton).  At this point, uhvf should have all the features of
+ukvm.  Things left to do:
 
-- need to implement other modules: gdb (is it finished?)
-
-- KVM doesn't allow a trap on `rdtsc` but it should if we want to use
-  the same interface for ukvm and uhvf (for e.g., det replay).  
-
-- `uhvf.c` and `ukvm-core.c` share a bunch of code; there should be a
-  common part and a platform specific part at some point.  The same
-  is true for the modules (e.g., `ukvm-net.c` and `uhvf-net.c`).
+- Lots of refactoring/cleanup.  `uhvf.c` and `ukvm-core.c` share a
+  bunch of code; there should be a common part and a platform specific
+  part at some point.  The same is true for the modules (e.g.,
+  `ukvm-net.c` and `uhvf-net.c`).
 
 For networking, I'm using the `vmnet` framework.  We can test ping by
 running the test_ping_serve unikernel:
@@ -39,7 +36,29 @@ Then:
 
     ping 10.0.0.2
 
+GDB also works, but it's a little bit weird because a gdb compiled and
+configured for Mac doesn't necessarily understand the ELF format that
+the .ukvm unikernel is in.  For this reason, I use a gdb in a Docker
+container as the gdb console.  For example, this unikernel:
+
+    sudo ./uhvf --disk=../tests/test_blk/disk.img --gdb ../tests/test_blk/test_blk.ukvm 
+
+is debugged with (again see https://github.com/djwillia/dockerfiles):
+
+    gdb-docker test_blk.ukvm 
+
+with the gdb command:
+
+    target remote $IP:1234
+
+where IP is the *external* network interface's IP address.  (localhost
+doesn't work because of how the container networking currently is
+done).
+
 Older notes:
+
+- KVM doesn't allow a trap on `rdtsc` but it should if we want to use
+  the same interface for ukvm and uhvf (for e.g., det replay).  
 
 - It looks like the PVCLOCK can be completely removed from the ukvm
   parts of Solo5, as long as we change the poll hypercall to send the

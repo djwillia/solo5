@@ -712,16 +712,18 @@ static void gdb_stub_start(platform_vcpu_t vcpu, uint8_t *mem)
 
 static int handle_exit(platform_vcpu_t vcpu, uint8_t *mem, void *platform_data)
 {
-#if 0
-    struct kvm_debug_exit_arch *arch_info;
-
-    if (run->exit_reason != KVM_EXIT_DEBUG)
+    uint64_t rip;
+    int ret;
+    
+    if (platform_get_exit_reason(vcpu, platform_data) != EXIT_DEBUG)
         return -1;
 
-    arch_info = &run->debug.arch;
-    if (gdb_is_pc_breakpointing(arch_info->pc))
-        gdb_handle_exception(mem, vcpufd, 1);
-#endif
+    ret = hv_vcpu_read_register(vcpu, HV_X86_RIP, &rip);
+    assert(ret == 0);
+
+    if (gdb_is_pc_breakpointing(rip))
+        gdb_handle_exception(mem, vcpu, 1);
+    
     return 0;
 }
 
