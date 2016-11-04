@@ -21,6 +21,23 @@ console test (from mirage-skeleton).
 - `uhvf.c` and `ukvm-core.c` share a bunch of code; there should be a
   common part and a platform specific part at some point.
 
+For networking, I'm using the `vmnet` framework.  For a predictable
+MAC address, define `USE_TEST_UUID` and the unikernel will get
+64:65:3a:31:64:3a.  Then, we can test ping by running the
+test_ping_serve unikernel:
+
+    sudo ./uhvf ../tests/test_ping_serve/test_ping_serve.ukvm
+
+And configure the host to know how to ping it like this:
+
+    sudo ifconfig bridge100 10.0.0.1/24 -hostfilter en5
+    sudo arp -s 10.0.0.2 64:65:3a:31:64:3a
+    ping 10.0.0.2
+
+It seems that there is currently an issue and the unikernel fails for:
+
+    sudo ping -i 0.0001 10.0.0.2
+
 
 Older notes:
 

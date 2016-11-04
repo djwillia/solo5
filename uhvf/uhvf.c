@@ -473,7 +473,7 @@ static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
     struct ukvm_poll *t = (struct ukvm_poll *) (mem + mem_off);
 
     struct timespec ts;
-    int rc, i, num_fds = 0;
+    int rc, i, max_fd = 0;
     fd_set readfds;
     START_TIME;
 
@@ -483,7 +483,7 @@ static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
 
         if (fd) {
             FD_SET(fd, &readfds);
-            num_fds += 1;
+            if (fd > max_fd) max_fd = fd;
         }
     }
     ts.tv_sec = t->timeout_nsecs / 1000000000ULL;
@@ -493,11 +493,10 @@ static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
      * Guest execution is blocked during the poll() call, note that
      * interrupts will not be injected.
      */
-    rc = pselect(num_fds, &readfds, NULL, NULL, &ts, NULL);
+    rc = pselect(max_fd + 1, &readfds, NULL, NULL, &ts, NULL);
     assert(rc >= 0);
 
     END_TIME;
-    
     t->ret = rc;
 }
 
@@ -718,6 +717,7 @@ static void tsc_init(void) {
     size_t len = sizeof(tsc_freq);
 
     sysctlbyname("machdep.tsc.frequency", &tsc_freq, &len, NULL, 0);
+    printf("tsc_freq=0x%llx(%lld)\n", tsc_freq, tsc_freq);
 }
 
 
@@ -727,24 +727,22 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
     tsc_init();
     /* Repeatedly run code and handle VM exits. */
     while (1) {
-        //int i;
+        int i;
         int handled = 0;
 
         if (platform_run(vcpu, platform_data))
             err(1, "Couldn't run vcpu");
 
-#if 0
         for (i = 0; i < NUM_MODULES; i++) {
-            if (!modules[i]->handle_exit(run, vcpufd, mem)) {
+            if (!modules[i]->handle_exit(vcpu, mem, platform_data)) {
                 handled = 1;
                 break;
             }
         }
-#endif
 
         if (handled)
             continue;
-
+        
         switch (platform_get_exit_reason(vcpu, platform_data)) {
         case EXIT_HLT: {
             puts("Exiting due to HLT\n");
@@ -753,22 +751,42 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
         }
         case EXIT_RDTSC: {
             uint64_t exec_time;
+            static uint64_t last_exec_time;
+            static uint64_t last_time_sleeping;
             uint64_t new_tsc;
             static uint64_t last_tsc;
-
+            static double last_tsc_f;
             if (hv_vcpu_get_exec_time(vcpu, &exec_time)) 
                 errx(1, "couldn't get exec time");
 
             uint64_t exec_time_s = exec_time / 1000000000ULL;
-            uint64_t exec_time_ns = exec_time - (exec_time_s * 1000000000ULL);
+            //uint64_t exec_time_ns = exec_time - (exec_time_s * 1000000000ULL);
+            uint64_t exec_time_ns = exec_time % 1000000000ULL;
 
+            assert(last_exec_time < exec_time);
+            last_exec_time = exec_time;
+
+            assert(exec_time_s * 1000000000ULL + exec_time_ns == exec_time);
+            
             exec_time_s += time_sleeping_s;
             exec_time_ns += time_sleeping_ns;
 
-            new_tsc = exec_time_s * tsc_freq
-                + (exec_time_ns * tsc_freq / 1000000000ULL);
+            assert(time_sleeping_s * 1000000000ULL + time_sleeping_ns >= last_time_sleeping);     
+            last_time_sleeping = time_sleeping_s * 1000000000ULL + time_sleeping_ns;
+
+            double tsc_f = (((double)exec_time + (double)last_time_sleeping) * (double)tsc_freq)/1000000000ULL;
+            
+            new_tsc = exec_time_s * tsc_freq;
+            new_tsc += (exec_time_ns * tsc_freq / 1000000000ULL);
+            assert(tsc_f > last_tsc_f);
+            last_tsc_f = tsc_f;
+
+            new_tsc = (uint64_t)tsc_f;
             
             {
+                if (new_tsc <= last_tsc)
+                    printf("tsc: new=0x%llx(%llu) last=0x%llx(%llu)\n",
+                           new_tsc, new_tsc, last_tsc, last_tsc);
                 assert(new_tsc > last_tsc);
                 last_tsc = new_tsc;
             }
@@ -926,6 +944,7 @@ int main(int argc, char **argv)
     if (setup_modules(vcpu, mem))
         errx(1, "couldn't setup modules");
 
+    printf("going to vcpu loop\n");
     /* vCPU run loop */
     vcpu_loop(vcpu, NULL, mem);
 
