@@ -11,10 +11,10 @@ also use containers to build Mirage unikernels.  See
 https://github.com/djwillia/dockerfiles.
 
 At the moment, uhvf can do the Solo5 hello test and ping_serve test
-and also run the Mirage console and stackv4 test (from
+and also run the Mirage console, stackv4, and block test (from
 mirage-skeleton).  Things left to do:
 
-- need to implement other modules: blk, gdb (is it finished?)
+- need to implement other modules: gdb (is it finished?)
 
 - KVM doesn't allow a trap on `rdtsc` but it should if we want to use
   the same interface for ukvm and uhvf (for e.g., det replay).  
