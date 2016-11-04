@@ -34,10 +34,7 @@ And configure the host to know how to ping it like this:
     sudo arp -s 10.0.0.2 64:65:3a:31:64:3a
     ping 10.0.0.2
 
-It seems that there is currently an issue and the unikernel fails for:
-
-    sudo ping -i 0.0001 10.0.0.2
-
+- need to clean up RDTSC emulation
 
 Older notes:
 
