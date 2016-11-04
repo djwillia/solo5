@@ -23,17 +23,20 @@ mirage-skeleton).  Things left to do:
   common part and a platform specific part at some point.  The same
   is true for the modules (e.g., `ukvm-net.c` and `uhvf-net.c`).
 
-For networking, I'm using the `vmnet` framework.  For a predictable
-MAC address, define `USE_TEST_UUID` and the unikernel will get
-64:65:3a:31:64:3a.  Then, we can test ping by running the
-test_ping_serve unikernel:
+For networking, I'm using the `vmnet` framework.  We can test ping by
+running the test_ping_serve unikernel:
 
     sudo ./uhvf ../tests/test_ping_serve/test_ping_serve.ukvm
 
-And configure the host to know how to ping it like this:
+And configure the host to know how to ping it like this (also in
+`net-setup.bash`):
 
-    sudo ifconfig bridge100 10.0.0.1/24 -hostfilter en5
-    sudo arp -s 10.0.0.2 64:65:3a:31:64:3a
+    BRIDGE=`ifconfig -l |grep -o bridge[0-9]* |tail -n 1`
+    IF=`ifconfig -l |grep -o en[0-9]* |tail -n 1`
+    sudo ifconfig $BRIDGE 10.0.0.1/24 -hostfilter $IF
+
+Then:
+
     ping 10.0.0.2
 
 Older notes:

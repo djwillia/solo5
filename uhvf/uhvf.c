@@ -90,8 +90,8 @@ struct ukvm_module *modules[] = {
 #define BOOT_PDPTE   0x11000
 #define BOOT_PDE     0x12000
 
-static uint64_t time_sleeping_s;  /* track unikernel sleeping time */
-static uint64_t time_sleeping_ns; 
+static uint64_t sleep_time_s;  /* track unikernel sleeping time */
+static uint64_t sleep_time_ns; 
 
 //#define DEBUG 1
 
@@ -465,8 +465,8 @@ static void ukvm_port_time_init(uint8_t *mem, uint32_t mem_off)
 #define END_TIME                                    \
     clock_get_time(cclock, &mts);                   \
     mach_port_deallocate(mach_task_self(), cclock); \
-    time_sleeping_s += mts.tv_sec - _time_s;        \
-    time_sleeping_ns += mts.tv_nsec - _time_ns;     
+    sleep_time_s += mts.tv_sec - _time_s;        \
+    sleep_time_ns += mts.tv_nsec - _time_ns;     
 
 static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
 {
@@ -751,15 +751,30 @@ static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
         }
         case EXIT_RDTSC: {
             uint64_t exec_time;
-            uint64_t time_sleeping;
+            uint64_t sleep_time;
             uint64_t new_tsc;
             double tsc_f;
-            
+            int dbg_sanity_check_rdtsc = 0;
+                
             if (hv_vcpu_get_exec_time(vcpu, &exec_time)) 
                 errx(1, "couldn't get exec time");
 
-            time_sleeping = ((time_sleeping_s * 1000000000ULL) + time_sleeping_ns);
-            tsc_f = (((double)exec_time + (double)time_sleeping)
+            if (dbg_sanity_check_rdtsc) {
+                static uint64_t last_exec_time;
+                assert(exec_time > last_exec_time);
+                last_exec_time = exec_time;
+            }
+            
+            sleep_time = ((sleep_time_s * 1000000000ULL) + sleep_time_ns);
+
+            if (dbg_sanity_check_rdtsc) {
+                static uint64_t last_sleep_time;
+                assert(sleep_time >= last_sleep_time);
+                last_sleep_time = sleep_time;
+            }
+
+
+            tsc_f = (((double)exec_time + (double)sleep_time)
                      * (double)tsc_freq) / 1000000000ULL;
             
             new_tsc = (uint64_t)tsc_f;
