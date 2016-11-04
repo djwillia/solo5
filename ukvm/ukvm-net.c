@@ -119,7 +119,6 @@ static void ukvm_port_netread(uint8_t *mem, uint64_t paddr)
     rd->ret = 0;
 }
 
-//static int handle_exit(struct kvm_run *run, int vcpufd, uint8_t *mem, void *platform_data)
 static int handle_exit(platform_vcpu_t vcpu, uint8_t *mem,
                        void *platform_data)
 {

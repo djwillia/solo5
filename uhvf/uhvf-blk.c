@@ -1,6 +1,5 @@
 #include <err.h>
 #include <fcntl.h>
-#include <linux/kvm.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,7 +35,7 @@ static void ukvm_port_blkwrite(uint8_t *mem, uint64_t paddr)
         wr->ret = -1;
         return;
     }
-
+    
     ret = lseek(diskfd, blkinfo.sector_size * wr->sector, SEEK_SET);
     assert(ret != (off_t)-1);
     GUEST_CHECK_PADDR(wr->data, GUEST_SIZE, wr->len);
@@ -67,30 +66,28 @@ static void ukvm_port_blkread(uint8_t *mem, uint64_t paddr)
 static int handle_exit(platform_vcpu_t vcpu, uint8_t *mem,
                        void *platform_data)
 {
-    struct kvm_run *run = (struct kvm_run *)platform_data;
 
-    if ((run->exit_reason != KVM_EXIT_IO) ||
-        (run->io.direction != KVM_EXIT_IO_OUT) ||
-        (run->io.size != 4))
+    if (platform_get_exit_reason(vcpu, platform_data) != EXIT_IO)
         return -1;
 
-    uint64_t paddr =
-        GUEST_PIO32_TO_PADDR((uint8_t *)run + run->io.data_offset);
+    int port = platform_get_io_port(vcpu, platform_data);
+    uint64_t data = platform_get_io_data(vcpu, platform_data);
 
-    switch (run->io.port) {
+    switch (port) {
     case UKVM_PORT_BLKINFO:
-        ukvm_port_blkinfo(mem, paddr);
+        ukvm_port_blkinfo(mem, data);
         break;
     case UKVM_PORT_BLKWRITE:
-        ukvm_port_blkwrite(mem, paddr);
+        ukvm_port_blkwrite(mem, data);
         break;
     case UKVM_PORT_BLKREAD:
-        ukvm_port_blkread(mem, paddr);
+        ukvm_port_blkread(mem, data);
         break;
     default:
         return -1;
     }
 
+    platform_advance_rip(vcpu, platform_data);
     return 0;
 }
 
