@@ -10,16 +10,20 @@ off), so I build using Docker for Mac with a simple build container. I
 also use containers to build Mirage unikernels.  See
 https://github.com/djwillia/dockerfiles.
 
-At the moment, uhvf can do the Solo5 hello test and also run the Mirage
-console test (from mirage-skeleton).
+At the moment, uhvf can do the Solo5 hello test and ping_serve test
+and also run the Mirage console and stackv4 test (from
+mirage-skeleton).  Things left to do:
 
-- need to implement modules: net, blk, gdb (is it finished?)
+- need to implement other modules: blk, gdb (is it finished?)
 
 - KVM doesn't allow a trap on `rdtsc` but it should if we want to use
-  the same interface for ukvm and uhvf (for e.g., det replay)
+  the same interface for ukvm and uhvf (for e.g., det replay).  Need
+  to clean up current RDTSC emulation as there is lots of debug there
+  still.
 
 - `uhvf.c` and `ukvm-core.c` share a bunch of code; there should be a
-  common part and a platform specific part at some point.
+  common part and a platform specific part at some point.  The same
+  is true for the modules (e.g., `ukvm-net.c` and `uhvf-net.c`).
 
 For networking, I'm using the `vmnet` framework.  For a predictable
 MAC address, define `USE_TEST_UUID` and the unikernel will get
@@ -33,8 +37,6 @@ And configure the host to know how to ping it like this:
     sudo ifconfig bridge100 10.0.0.1/24 -hostfilter en5
     sudo arp -s 10.0.0.2 64:65:3a:31:64:3a
     ping 10.0.0.2
-
-- need to clean up RDTSC emulation
 
 Older notes:
 
