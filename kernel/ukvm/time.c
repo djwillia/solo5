@@ -19,20 +19,25 @@
 #include "kernel.h"
 #include "ukvm.h"
 
+static uint64_t freq;
+
 void time_init(void)
 {
-    assert(pvclock_init() == 0);
+    struct ukvm_time_init t;
+    outl(UKVM_PORT_TIME_INIT, ukvm_ptr(&t));
+    cc_barrier();
+    freq = t.freq;
 }
 
 uint64_t solo5_clock_monotonic(void)
 {
-    return pvclock_monotonic();
+    return cpu_rdtsc() * 1000000000ULL / freq;
 }
 
 /* return wall time in nsecs */
 uint64_t solo5_clock_wall(void)
 {
-    return pvclock_monotonic() + pvclock_epochoffset();
+    return solo5_clock_monotonic();
 }
 
 int solo5_poll(uint64_t until_nsecs)
@@ -40,6 +45,7 @@ int solo5_poll(uint64_t until_nsecs)
     struct ukvm_poll t;
     uint64_t now;
 
+    
     now = solo5_clock_monotonic();
     if (until_nsecs <= now)
         t.timeout_nsecs = 0;

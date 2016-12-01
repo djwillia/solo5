@@ -205,7 +205,7 @@ static void load_code(const char *file, uint8_t *mem,     /* IN */
     ph_cnt = hdr.e_phnum;
     buflen = ph_entsz * ph_cnt;
 
-    phdr = malloc(buflen);
+    phdr = (Elf64_Phdr *)malloc(buflen);
     if (!phdr)
         err(1, "unable to allocate program header buffer\n");
 
@@ -447,6 +447,7 @@ static void inject_interrupt(int vcpufd, uint32_t intr)
 }
 #endif
 
+#if 0
 static pthread_cond_t sleep_cv = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t interrupt_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -473,6 +474,7 @@ static void *event_loop(void *arg)
 
     return NULL;
 }
+#endif
 
 void ukvm_port_puts(uint8_t *mem, uint64_t paddr)
 {
@@ -487,6 +489,7 @@ void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
 {
     GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_poll));
     struct ukvm_poll *t = (struct ukvm_poll *)(mem + paddr);
+
     struct timespec ts;
     int rc, i, num_fds = 0;
     struct pollfd fds[NUM_MODULES];  /* we only support at most one
@@ -515,43 +518,114 @@ void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
     t->ret = rc;
 }
 
-static int vcpu_loop(struct kvm_run *run, int vcpufd, uint8_t *mem)
-{
-    int ret;
+#if 0
+enum {
+    EXIT_HLT,
+    EXIT_IO,
+    EXIT_IGNORE,
+    EXIT_FAIL,
+};
 
+typedef uint64_t platform_vcpu_t;
+#endif
+int platform_run(platform_vcpu_t vcpu,
+                 void *platform_data __attribute__((unused)))
+{
+    int vcpufd = (int)vcpu;
+    int ret = ioctl(vcpufd, KVM_RUN, NULL);
+
+    if (ret && (errno != EINTR)) {
+        assert(errno != EAGAIN);
+        return 1;
+    }
+
+    return 0;
+}
+
+int platform_get_exit_reason(platform_vcpu_t vcpu __attribute__((unused)),
+                             void *platform_data)
+{
+    struct kvm_run *run = (struct kvm_run *)platform_data;
+
+    switch (run->exit_reason) {    
+    case KVM_EXIT_HLT:
+        return EXIT_HLT;
+    case KVM_EXIT_IO:
+        return EXIT_IO;
+    case KVM_EXIT_INTR:
+        return EXIT_IGNORE;
+        
+    case KVM_EXIT_FAIL_ENTRY:
+        fprintf(stderr,
+                "KVM_EXIT_FAIL_ENTRY: hw_entry_failure_reason = 0x%llx",
+                run->fail_entry.hardware_entry_failure_reason);
+        return EXIT_FAIL;
+    case KVM_EXIT_INTERNAL_ERROR:
+        fprintf(stderr,
+                "KVM_EXIT_INTERNAL_ERROR: suberror = 0x%x",
+                run->internal.suberror);
+        return EXIT_FAIL;
+    default:
+        fprintf(stderr,
+                "Unknown KVM_EXIT ERROR = 0x%x"
+                , run->exit_reason);
+        return EXIT_FAIL;
+    }
+}
+
+int platform_get_io_port(platform_vcpu_t vcpu, void *platform_data)
+{
+    struct kvm_run *run = (struct kvm_run *)platform_data;
+    assert(run->io.direction == KVM_EXIT_IO_OUT);
+    
+    return run->io.port;
+}
+uint64_t platform_get_io_data(platform_vcpu_t vcpu, void *platform_data)
+{
+    struct kvm_run *run = (struct kvm_run *)platform_data;
+    assert(run->io.direction == KVM_EXIT_IO_OUT);
+    assert(run->io.size == 4);
+    
+    return GUEST_PIO32_TO_PADDR((uint8_t *)run + run->io.data_offset);
+}
+void platform_advance_rip(platform_vcpu_t vcpu, void *platform_data)
+{
+    /* no-op: KVM automatically advances RIP after I/O */
+}
+
+static int vcpu_loop(platform_vcpu_t vcpu, void *platform_data, uint8_t *mem)
+{
     /* Repeatedly run code and handle VM exits. */
     while (1) {
-        int i, handled = 0;
+        //int i,
+        int handled = 0;
 
-        ret = ioctl(vcpufd, KVM_RUN, NULL);
-        if (ret < 0 &&
-                (errno != EINTR && errno != EAGAIN)) {
-            err(1, "KVM_RUN failed");
-        }
+        if (platform_run(vcpu, platform_data))
+            err(1, "Couldn't run vcpu");
 
+#if 0
         for (i = 0; i < NUM_MODULES; i++) {
-            if (!modules[i]->handle_exit(run, vcpufd, mem)) {
+            if (!modules[i]->handle_exit((struct kvm_run *)platform_data,
+                                         (int)vcpu, mem)) {
                 handled = 1;
                 break;
             }
         }
-
+#endif
         if (handled)
             continue;
 
-        switch (run->exit_reason) {
-        case KVM_EXIT_HLT: {
-            puts("KVM_EXIT_HLT");
+        switch (platform_get_exit_reason(vcpu, platform_data)) {
+        case EXIT_HLT: {
+            puts("Exiting due to HLT\n");
             /* get_and_dump_sregs(vcpufd); */
             return 0;
         }
-        case KVM_EXIT_IO: {
-            assert(run->io.direction == KVM_EXIT_IO_OUT);
-            assert(run->io.size == 4);
-            uint64_t paddr =
-                GUEST_PIO32_TO_PADDR((uint8_t *)run + run->io.data_offset);
+        case EXIT_IO: {
+            int port = platform_get_io_port(vcpu, platform_data);
+            uint64_t paddr = platform_get_io_data(vcpu, platform_data);
 
-            switch (run->io.port) {
+            switch (port) {
             case UKVM_PORT_PUTS:
                 ukvm_port_puts(mem, paddr);
                 break;
@@ -559,36 +633,23 @@ static int vcpu_loop(struct kvm_run *run, int vcpufd, uint8_t *mem)
                 ukvm_port_poll(mem, paddr);
                 break;
             default:
-                errx(1, "unhandled KVM_EXIT_IO (%x)", run->io.port);
+                errx(1, "unhandled IO_PORT EXIT (0x%x)", port);
+                return -1;
             };
+            
+            platform_advance_rip(vcpu, platform_data);
+
             break;
         }
-        case KVM_EXIT_IRQ_WINDOW_OPEN: {
-            run->request_interrupt_window = 0;
-            /* inject_interrupt(vcpufd, INTR_USER_TIMER); */
-            /* inject_interrupt(vcpufd, 0x31); */
+        case EXIT_IGNORE: {
             break;
         }
-        case KVM_EXIT_INTR: {
-            /* RUN was interrupted, so we just resume */
-            /* note, this was probably because we are going to put an
-             * interrupt in, so there might be some efficiency to get
-             * there
-             */
-            break;
-        }
-        case KVM_EXIT_FAIL_ENTRY:
-            errx(1, "KVM_EXIT_FAIL_ENTRY: hw_entry_failure_reason = 0x%llx",
-                 run->fail_entry.hardware_entry_failure_reason);
-        case KVM_EXIT_INTERNAL_ERROR:
-            errx(1, "KVM_EXIT_INTERNAL_ERROR: suberror = 0x%x",
-                 run->internal.suberror);
-        default:
-            errx(1, "exit_reason = 0x%x", run->exit_reason);
+        case EXIT_FAIL:
+            return -1;
         }
     }
-
-    return 0; /* XXX Refactor return code paths in the above code */
+    
+    return -1; /* never reached */
 }
 
 int setup_modules(int vcpufd, uint8_t *mem)
@@ -774,15 +835,18 @@ int main(int argc, char **argv)
 
     setup_cpuid(kvm, vcpufd);
 
+#if 0
     /* start event thread */
     pthread_t event_thread;
 
     ret = pthread_create(&event_thread, NULL, event_loop, (void *) run);
     if (ret)
         err(1, "couldn't create event thread");
-
+#endif
+    
     if (setup_modules(vcpufd, mem))
         errx(1, "couldn't setup modules");
 
-    return vcpu_loop(run, vcpufd, mem);
+    //return vcpu_loop(run, vcpufd, mem);
+    return vcpu_loop((platform_vcpu_t)vcpufd, (void *)run, mem);
 }

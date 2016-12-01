@@ -21,6 +21,8 @@
  * EFLAGS bits
  */
 #define X86_EFLAGS_CF	0x00000001 /* Carry Flag */
+#define X86_EFLAGS_TF_BIT   8 /* Trap flag (single step) */
+#define X86_EFLAGS_TF   _BITUL(X86_EFLAGS_TF_BIT)
 
 /*
  * Basic CPU control in CR0
@@ -71,27 +73,27 @@
      (((limit) & _AC(0x0000ffff, ULL))))
 
 struct _kvm_segment {
-    __u64 base;
-    __u32 limit;
-    __u16 selector;
-    __u8 type;
-    __u8 present, dpl, db, s, l, g, avl;
-    __u8 unusable;
-    __u8 padding;
+    uint64_t base;
+    uint32_t limit;
+    uint16_t selector;
+    uint8_t type;
+    uint8_t present, dpl, db, s, l, g, avl;
+    uint8_t unusable;
+    uint8_t padding;
 };
 
-#define GDT_GET_G(x)   (__u8)(((x) & 0x0080000000000000) >> 55)
-#define GDT_GET_DB(x)  (__u8)(((x) & 0x0040000000000000) >> 54)
-#define GDT_GET_L(x)   (__u8)(((x) & 0x0020000000000000) >> 53)
-#define GDT_GET_AVL(x) (__u8)(((x) & 0x0010000000000000) >> 52)
-#define GDT_GET_P(x)   (__u8)(((x) & 0x0000800000000000) >> 47)
-#define GDT_GET_DPL(x) (__u8)(((x) & 0x0000600000000000) >> 45)
-#define GDT_GET_S(x)   (__u8)(((x) & 0x0000100000000000) >> 44)
-#define GDT_GET_TYPE(x)(__u8)(((x) & 0x00000F0000000000) >> 40)
+#define GDT_GET_G(x)   (uint8_t)(((x) & 0x0080000000000000) >> 55)
+#define GDT_GET_DB(x)  (uint8_t)(((x) & 0x0040000000000000) >> 54)
+#define GDT_GET_L(x)   (uint8_t)(((x) & 0x0020000000000000) >> 53)
+#define GDT_GET_AVL(x) (uint8_t)(((x) & 0x0010000000000000) >> 52)
+#define GDT_GET_P(x)   (uint8_t)(((x) & 0x0000800000000000) >> 47)
+#define GDT_GET_DPL(x) (uint8_t)(((x) & 0x0000600000000000) >> 45)
+#define GDT_GET_S(x)   (uint8_t)(((x) & 0x0000100000000000) >> 44)
+#define GDT_GET_TYPE(x)(uint8_t)(((x) & 0x00000F0000000000) >> 40)
 
 #define GDT_TO_KVM_SEGMENT(seg, gdt_table, sel) \
     do {                                        \
-        __u64 gdt_ent = gdt_table[sel];         \
+        uint64_t gdt_ent = gdt_table[sel];         \
         seg.base = GDT_GET_BASE(gdt_ent);       \
         seg.limit = GDT_GET_LIMIT(gdt_ent);     \
         seg.selector = sel * 8;                 \

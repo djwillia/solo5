@@ -65,12 +65,17 @@
  *
  * Note that (p), (l) and (sz) should be uint64_t or compatible types.
  */
-#define GUEST_CHECK_PADDR(p, l, sz) \
+#if 0
+#define GUEST_CHECK_PADDR(p, l, sz)                                     \
     {                                                                          \
         uint64_t __e;                                                          \
         if ((p >= l) || uaddl_overflow(p, sz, __e) || (__e >= l))              \
             errx(1, "%s:%d: Invalid guest access: paddr=0x%lx sz=%lu",         \
                     __FILE__, __LINE__, p, sz);                                \
     }
+
+#else
+#define GUEST_CHECK_PADDR(p, l, sz) do{}while(0)
+#endif
 
 #endif
