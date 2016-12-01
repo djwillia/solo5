@@ -18,9 +18,9 @@
 #include <vmnet/vmnet.h>
 
 
-#include "ukvm-private.h"
-#include "ukvm-modules.h"
-#include "ukvm.h"
+#include "../ukvm-private.h"
+#include "../ukvm-modules.h"
+#include "../ukvm.h"
 
 static char *netiface;
 static int netfd;
@@ -235,31 +235,29 @@ static void ukvm_port_netread(uint8_t *mem, uint64_t paddr)
     rd->ret = 0;
 }
 
-static int handle_exit(platform_vcpu_t vcpu, uint8_t *mem,
-                       void *platform_data)
+static int handle_exit(struct platform *p)
 {
-
-    if (platform_get_exit_reason(vcpu, platform_data) != EXIT_IO)
+    if (platform_get_exit_reason(p) != EXIT_IO)
         return -1;
     
-    int port = platform_get_io_port(vcpu, platform_data);
-    uint64_t data = platform_get_io_data(vcpu, platform_data);
+    int port = platform_get_io_port(p);
+    uint64_t data = platform_get_io_data(p);
 
     switch (port) {
     case UKVM_PORT_NETINFO:
-        ukvm_port_netinfo(mem, data);
+        ukvm_port_netinfo(p->mem, data);
         break;
     case UKVM_PORT_NETWRITE:
-        ukvm_port_netwrite(mem, data);
+        ukvm_port_netwrite(p->mem, data);
         break;
     case UKVM_PORT_NETREAD:
-        ukvm_port_netread(mem, data);
+        ukvm_port_netread(p->mem, data);
         break;
     default:
         return -1;
     }
 
-    platform_advance_rip(vcpu, platform_data);
+    platform_advance_rip(p);
     return 0;
 }
 
@@ -271,7 +269,7 @@ static int handle_cmdarg(char *cmdarg)
     return 0;
 }
 
-static int setup(platform_vcpu_t vcpu, uint8_t *mem)
+static int setup(struct platform *p)
 {
     
     /* set up virtual network */

@@ -7,10 +7,9 @@
 
 struct ukvm_module {
     int (*get_fd)(void);
-    int (*handle_exit)(platform_vcpu_t vcpu, uint8_t *mem,
-                       void *platform_data);
+    int (*handle_exit)(struct platform *p);
     int (*handle_cmdarg)(char *cmdarg);
-    int (*setup)(platform_vcpu_t vcpu, uint8_t *mem);
+    int (*setup)(struct platform *p);
     char *(*usage)(void);
 };
 

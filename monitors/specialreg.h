@@ -236,23 +236,6 @@
 #define	CPUID_FAMILY		0x00000f00
 #define	CPUID_EXT_MODEL		0x000f0000
 #define	CPUID_EXT_FAMILY	0x0ff00000
-// #ifdef __i386__
-// #define	CPUID_TO_MODEL(id) \
-//     ((((id) & CPUID_MODEL) >> 4) | \
-//     ((((id) & CPUID_FAMILY) >= 0x600) ? \
-//     (((id) & CPUID_EXT_MODEL) >> 12) : 0))
-// #define	CPUID_TO_FAMILY(id) \
-//     ((((id) & CPUID_FAMILY) >> 8) + \
-//     ((((id) & CPUID_FAMILY) == 0xf00) ? \
-//     (((id) & CPUID_EXT_FAMILY) >> 20) : 0))
-// #else
-// #define	CPUID_TO_MODEL(id) \
-//     ((((id) & CPUID_MODEL) >> 4) | \
-//     (((id) & CPUID_EXT_MODEL) >> 12))
-// #define	CPUID_TO_FAMILY(id) \
-//     ((((id) & CPUID_FAMILY) >> 8) + \
-//     (((id) & CPUID_EXT_FAMILY) >> 20))
-// #endif
 
 /*
  * CPUID instruction 1 ebx info

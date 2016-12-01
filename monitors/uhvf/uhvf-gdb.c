@@ -104,11 +104,11 @@
 #include <netdb.h>
 #include <assert.h>
 
-#include "ukvm-private.h"
-#include "ukvm-modules.h"
-#include "ukvm-cpu.h"
-#include "ukvm.h"
-#include "unikernel-monitor.h"
+#include "../ukvm-private.h"
+#include "../ukvm-modules.h"
+#include "../ukvm-cpu.h"
+#include "../ukvm.h"
+#include "../unikernel-monitor.h"
 
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>
@@ -710,24 +710,24 @@ static void gdb_stub_start(platform_vcpu_t vcpu, uint8_t *mem)
 
 
 
-static int handle_exit(platform_vcpu_t vcpu, uint8_t *mem, void *platform_data)
+static int handle_exit(struct platform *p)
 {
     uint64_t rip;
     int ret;
     
-    if (platform_get_exit_reason(vcpu, platform_data) != EXIT_DEBUG)
+    if (platform_get_exit_reason(p) != EXIT_DEBUG)
         return -1;
 
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RIP, &rip);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RIP, &rip);
     assert(ret == 0);
 
     if (gdb_is_pc_breakpointing(rip))
-        gdb_handle_exception(mem, vcpu, 1);
+        gdb_handle_exception(p->mem, p->vcpu, 1);
     
     return 0;
 }
 
-static int setup(platform_vcpu_t vcpu, uint8_t *mem)
+static int setup(struct platform *p)
 {
     int ret;
     uint64_t rflags;
@@ -735,12 +735,12 @@ static int setup(platform_vcpu_t vcpu, uint8_t *mem)
     if (!use_gdb)
         return 0;
 
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RFLAGS, &rflags);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RFLAGS, &rflags);
     assert(ret == 0);
-    ret = hv_vcpu_write_register(vcpu, HV_X86_RFLAGS, rflags | X86_EFLAGS_TF);
+    ret = hv_vcpu_write_register(p->vcpu, HV_X86_RFLAGS, rflags | X86_EFLAGS_TF);
     assert(ret == 0);
     
-    gdb_stub_start(vcpu, mem);
+    gdb_stub_start(p->vcpu, p->mem);
 
     return 0;
 }
