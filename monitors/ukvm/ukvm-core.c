@@ -104,8 +104,6 @@ void platform_setup_system_gdt(struct platform *p,
     struct kvm_segment data_seg, code_seg;
     int ret;
     uint64_t *gdt = (uint64_t *) (p->mem + off);
-    uint64_t cs_off = cs_idx * sizeof(uint64_t);
-    uint64_t ds_off = ds_idx * sizeof(uint64_t);
     
     /* Set all cpu/mem system structures */
     ret = ioctl(p->vcpu, KVM_GET_SREGS, &sregs);
@@ -115,8 +113,8 @@ void platform_setup_system_gdt(struct platform *p,
     sregs.gdt.base = off;
     sregs.gdt.limit = limit;
     
-    GDT_TO_KVM_SEGMENT(code_seg, gdt, cs_off);
-    GDT_TO_KVM_SEGMENT(data_seg, gdt, ds_off);
+    GDT_TO_KVM_SEGMENT(code_seg, gdt, cs_idx);
+    GDT_TO_KVM_SEGMENT(data_seg, gdt, ds_idx);
 
     sregs.cs = code_seg;
     sregs.ds = data_seg;
@@ -298,10 +296,27 @@ void platform_advance_rip(struct platform *p)
     /* no-op: KVM automatically advances RIP after I/O */
 }
 
+/* XXX this is horrible */
+static uint64_t get_tsc_const(void) {
+    FILE *f = fopen("/proc/cpuinfo", "r");
+    uint64_t mhz = 0, dec = 0;
+    int ret = 0;
+    assert(f != NULL);
+
+    while (ret == 0) {
+        ret = fscanf(f, "cpu MHz\t: %lu.%lu\n", &mhz, &dec);
+        if (ret == 0) {
+            while(fgetc(f)!='\n') {
+                fgetc(f);
+            }
+        }
+    }
+    return (mhz * 1000000) + (dec * 1000);
+}
+
 void platform_init_time(uint64_t *freq)
 {
-    printf("unimplemented");
-    assert(0);
+    *freq = get_tsc_const();
 }
 
 uint64_t platform_get_exec_time(struct platform *p)
