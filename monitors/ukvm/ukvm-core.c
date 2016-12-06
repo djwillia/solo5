@@ -34,6 +34,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include <poll.h>
+#include <time.h>
 
 #define KVM_32BIT_MAX_MEM_SIZE  (1ULL << 32)
 #define KVM_32BIT_GAP_SIZE    (768 << 20)
@@ -333,6 +334,9 @@ void platform_emul_rdtsc(struct platform *p, uint64_t new_tsc)
 
 void platform_get_timestamp(uint64_t *s, uint64_t *ns)
 {
-    printf("unimplemented");
-    assert(0);
+    struct timespec tp;
+
+    clock_gettime(CLOCK_REALTIME, &tp); 
+    *s = tp.tv_sec;
+    *ns = tp.tv_nsec;
 }
