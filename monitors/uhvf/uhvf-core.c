@@ -21,14 +21,33 @@
  *   xhyve: https://github.com/mist64/xhyve
  *   ukvm: https://github.com/solo5/solo5
  */
-
-#include "elf.h"
+#include <err.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/mman.h>
+#include <assert.h>
+#include <libgen.h> /* for `basename` */
+#include <inttypes.h>
+#include <signal.h>
 
 #include <sys/sysctl.h>
 #include <sys/select.h>
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>
 
+#include "../elf.h"
+#include "../elftypes.h"
+#include "../specialreg.h"
+
+#include "../ukvm-private.h"
+#include "../ukvm-cpu.h"
+#include "../ukvm.h"
+#include "../unikernel-monitor.h"
 
 #ifdef __MACH__
 #include <mach/clock.h>
@@ -59,9 +78,6 @@ static clock_serv_t cclock;
 #define BOOT_PML4    0x10000
 #define BOOT_PDPTE   0x11000
 #define BOOT_PDE     0x12000
-
-static uint64_t sleep_time_s;  /* track unikernel sleeping time */
-static uint64_t sleep_time_ns; 
 
 //#define DEBUG 1
 
@@ -183,12 +199,13 @@ void platform_setup_system_gdt(struct platform *p,
     wvmcs(p->vcpu, VMCS_GUEST_LDTR_AR, 0x00000082);
 }
 
-void platform_setup_system(struct platform *p, uint64_t entry)
+void platform_setup_system(struct platform *p, uint64_t entry,
+                           uint64_t boot_info)
 {
 	wvmcs(p->vcpu, VMCS_GUEST_RFLAGS, 0x2);
 	wvmcs(p->vcpu, VMCS_GUEST_RIP, entry);
     wvmcs(p->vcpu, VMCS_GUEST_RSP, GUEST_SIZE - 8);
-    wreg(p->vcpu, HV_X86_RDI, BOOT_INFO);
+    wreg(p->vcpu, HV_X86_RDI, boot_info);
 
     /* trap everything for cr0 and cr4 */
 	wvmcs(p->vcpu, VMCS_CTRL_CR0_MASK, 0xffffffff);

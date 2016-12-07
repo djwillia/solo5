@@ -16,7 +16,7 @@
  * NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
+#if 0
 #ifdef __UHVF__
 #include "uhvf/uhvf-gdb.c"
 
@@ -25,5 +25,5 @@
 #ifdef __UKVM_HOST__
 #include "ukvm/ukvm-gdb.c"
 #endif
-
+#endif
 #endif
