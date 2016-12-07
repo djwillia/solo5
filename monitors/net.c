@@ -17,13 +17,3 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifdef __UHVF__
-#include "uhvf/uhvf-net.c"
-
-#else
-
-#ifdef __UKVM_HOST__
-#include "ukvm/ukvm-net.c"
-#endif
-
-#endif

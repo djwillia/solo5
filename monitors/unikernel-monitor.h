@@ -33,7 +33,8 @@ void platform_setup_system_page_tables(struct platform *p, uint64_t pml4);
 void platform_setup_system_gdt(struct platform *p,
                                uint64_t cs_idx, uint64_t ds_idx,
                                uint64_t off, uint64_t limit);
-void platform_setup_system(struct platform *p, uint64_t entry);
+void platform_setup_system(struct platform *p, uint64_t entry,
+                           uint64_t boot_info);
 
 
 

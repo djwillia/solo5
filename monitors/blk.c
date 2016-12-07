@@ -11,17 +11,6 @@
 #include "ukvm-modules.h"
 #include "ukvm.h"
 
-#ifdef __UHVF__
-#include "uhvf/uhvf-blk.c"
-
-#else
-
-#ifdef __UKVM_HOST__
-#include "ukvm/ukvm-blk.c"
-#endif
-
-#endif
-
 static struct ukvm_blkinfo blkinfo;
 static char *diskfile;
 static int diskfd;

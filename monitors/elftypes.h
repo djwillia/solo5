@@ -31,11 +31,13 @@
 #ifndef _SYS_ELFTYPES_H
 #define	_SYS_ELFTYPES_H
 
+#if 0
 #if !defined(__APPLE__)
 #include <sys/feature_tests.h>
 #else /* is Apple Mac OS X */
 /* NOTHING */ /* In lieu of Solaris <sys/feature_tests.h> */
 #endif /* __APPLE__ */
+#endif
 
 #ifdef	__cplusplus
 extern "C" {

@@ -22,19 +22,32 @@
  *   lkvm: http://github.com/clearlinux/kvmtool
  */
 #define _GNU_SOURCE
+#include <err.h>
 #include <fcntl.h>
-#include <linux/kvm.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/mman.h>
+#include <assert.h>
+#include <libgen.h> /* for `basename` */
+#include <inttypes.h>
+#include <signal.h>
+
+#include <linux/kvm.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <linux/const.h>
 #include <asm/msr-index.h>
-#include <elf.h>
-#include <signal.h>
-#include <pthread.h>
 #include <poll.h>
 #include <time.h>
+
+#include "../unikernel-monitor.h"
+#include "../ukvm-private.h"
+#include "../ukvm-cpu.h"
 
 #define KVM_32BIT_MAX_MEM_SIZE  (1ULL << 32)
 #define KVM_32BIT_GAP_SIZE    (768 << 20)
@@ -129,7 +142,8 @@ void platform_setup_system_gdt(struct platform *p,
         err(1, "KVM_SET_SREGS");
 }
 
-void platform_setup_system(struct platform *p, uint64_t entry)
+void platform_setup_system(struct platform *p, uint64_t entry,
+                           uint64_t boot_info)
 {
     int ret;
     /*
@@ -142,7 +156,7 @@ void platform_setup_system(struct platform *p, uint64_t entry)
         .rip = entry,
         .rflags = 0x2,
         .rsp = GUEST_SIZE - 8,  /* x86_64 ABI requires ((rsp + 8) % 16) == 0 */
-        .rdi = BOOT_INFO,       /* size arg in kernel main */
+        .rdi = boot_info,       /* size arg in kernel main */
     };
     ret = ioctl(p->vcpu, KVM_SET_REGS, &regs);
     if (ret == -1)
@@ -273,6 +287,8 @@ int platform_get_exit_reason(struct platform *p)
                 , run->exit_reason);
         return EXIT_FAIL;
     }
+
+    return EXIT_FAIL;
 }
 
 int platform_get_io_port(struct platform *p)
@@ -324,6 +340,7 @@ uint64_t platform_get_exec_time(struct platform *p)
 {
     printf("unimplemented");
     assert(0);
+    return 0;
 }
 
 void platform_emul_rdtsc(struct platform *p, uint64_t new_tsc)

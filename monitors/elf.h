@@ -30,6 +30,7 @@
 #ifndef _SYS_ELF_H
 #define	_SYS_ELF_H
 
+#if 0
 #if !defined(__APPLE__)
 #include <sys/elftypes.h>
 #else /* is Apple Mac OS X */
@@ -40,9 +41,10 @@
 #endif
 #endif
 
-#include "elftypes.h" /* In lieu of Solaris <sys/elftypes.h> */
 #endif /* __APPLE__ */
+#endif
 
+#include "elftypes.h" /* In lieu of Solaris <sys/elftypes.h> */
 #ifdef	__cplusplus
 extern "C" {
 #endif

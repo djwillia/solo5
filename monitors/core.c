@@ -29,7 +29,10 @@
 #include <assert.h>
 #include <libgen.h> /* for `basename` */
 #include <inttypes.h>
+#include <signal.h>
 
+#include "elf.h"
+#include "elftypes.h"
 #include "specialreg.h"
 
 /* from ukvm */
@@ -82,16 +85,6 @@ struct ukvm_module *modules[] = {
 #define BOOT_GDT_TSS1    4
 #define BOOT_GDT_TSS2    5
 #define BOOT_GDT_MAX     6
-
-#ifdef __UHVF__
-#include "uhvf/uhvf-core.c"
-
-#else
-#ifdef __UKVM_HOST__
-#include "ukvm/ukvm-core.c"
-#endif
-
-#endif
 
 static uint64_t sleep_time_s;  /* track unikernel sleeping time */
 static uint64_t sleep_time_ns; 
@@ -331,7 +324,7 @@ static void setup_system(struct platform *p, uint64_t entry)
     setup_system_page_tables(p);
     setup_system_64bit(p);
 
-    platform_setup_system(p, entry);
+    platform_setup_system(p, entry, BOOT_INFO);
 }
 
 void ukvm_port_puts(uint8_t *mem, uint64_t paddr)
