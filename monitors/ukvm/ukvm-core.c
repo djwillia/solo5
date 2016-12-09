@@ -270,7 +270,8 @@ int platform_get_exit_reason(struct platform *p)
         return EXIT_IO;
     case KVM_EXIT_INTR:
         return EXIT_IGNORE;
-        
+    case KVM_EXIT_DEBUG:
+        return EXIT_DEBUG;
     case KVM_EXIT_FAIL_ENTRY:
         fprintf(stderr,
                 "KVM_EXIT_FAIL_ENTRY: hw_entry_failure_reason = 0x%llx",

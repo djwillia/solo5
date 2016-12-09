@@ -89,687 +89,105 @@
  *
  ****************************************************************************/
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <err.h>
-
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <signal.h>
-#include <netdb.h>
-#include <assert.h>
-
-#include "../ukvm-private.h"
-#include "../ukvm-modules.h"
-#include "../ukvm-cpu.h"
-#include "../ukvm.h"
-#include "../unikernel-monitor.h"
-
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>
 
-static int use_gdb;
-
-static int listen_socket_fd;
-static int socket_fd;
-static int stepping;
-
-#define MAX_BREAKPOINTS    8
-static uint64_t breakpoints[MAX_BREAKPOINTS];
-
-
-static void wait_for_connect(int portn)
+uint64_t platform_get_rip(struct platform_t *p)
 {
-    struct sockaddr_in sockaddr;
-    socklen_t sockaddr_len;
-    struct protoent *protoent;
-    int r;
-    int opt;
-
-    printf("GDB trying to get a connection at port %d\n", portn);
-
-    listen_socket_fd = socket(PF_INET, SOCK_STREAM, 0);
-    assert(listen_socket_fd != -1);
-
-    /* Allow rapid reuse of this port */
-    opt = 1;
-    r = setsockopt(listen_socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt,
-                   sizeof(opt));
-    if (r == -1)
-        perror("setsockopt(SO_REUSEADDR) failed");
-
-    memset(&sockaddr, '\000', sizeof(sockaddr));
-    sockaddr.sin_family = AF_INET;
-    sockaddr.sin_port = htons(portn);
-    sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    r = bind(listen_socket_fd, (struct sockaddr *) &sockaddr,
-             sizeof(sockaddr));
-    if (r == -1)
-        perror("Failed to bind socket");
-
-    r = listen(listen_socket_fd, 0);
-    if (r == -1)
-        perror("Failed to listen on socket");
-
-    sockaddr_len = sizeof(sockaddr);
-    socket_fd = accept(listen_socket_fd, (struct sockaddr *) &sockaddr,
-                       &sockaddr_len);
-    if (socket_fd == -1)
-        perror("Failed to accept on socket");
-
-    close(listen_socket_fd);
-
-    protoent = getprotobyname("tcp");
-    if (!protoent) {
-        perror("getprotobyname (\"tcp\") failed");
-        return;
-    }
-
-    /* Disable Nagle - allow small packets to be sent without delay. */
-    opt = 1;
-    r = setsockopt(socket_fd, protoent->p_proto, TCP_NODELAY, &opt,
-                   sizeof(opt));
-    if (r == -1)
-        perror("setsockopt(TCP_NODELAY) failed");
-
-    int ip = sockaddr.sin_addr.s_addr;
-
-    printf("GDB Connected to %d.%d.%d.%d\n", ip & 0xff, (ip >> 8) & 0xff,
-           (ip >> 16) & 0xff, (ip >> 24) & 0xff);
+    int ret;
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RIP, &rip);
+    assert(ret == 0);
+    return rip;
 }
 
-
-static char buf[4096], *bufptr = buf;
-static void flush_debug_buffer(void)
+int platform_get_regs(struct platform_t *p, long *reg)
 {
-    char *p = buf;
-
-    while (p != bufptr) {
-        int n;
-
-        n = send(socket_fd, p, bufptr - p, 0);
-        if (n == -1) {
-            perror("error on debug socket: %m");
-            break;
-        }
-        p += n;
-    }
-    bufptr = buf;
-}
-
-
-void putDebugChar(int ch)
-{
-    if (bufptr == buf + sizeof(buf))
-        flush_debug_buffer();
-    *bufptr++ = ch;
-}
-
-
-int getDebugChar(void)
-{
-    char ch;
-
-    recv(socket_fd, &ch, 1, 0);
-
-    return ch;
-}
-
-
-/************************************************************************/
-/* BUFMAX defines the maximum number of characters in inbound/outbound buffers*/
-/* at least NUMREGBYTES*2 are needed for register packets */
-#define BUFMAX (400 * 4)
-
-int remote_debug;
-/*  debug >  0 prints ill-formed commands in valid packets & checksum errors */
-
-static const char hexchars[] = "0123456789abcdef";
-
-/* Number of registers.  */
-#define NUMREGS        32
-
-/* Number of bytes of registers.  */
-#define NUMREGBYTES (NUMREGS * 8)
-
-/* list is here: gdb/amd64-linux-nat.c */
-enum regnames {
-    RAX, RBX, RCX, RDX,
-    RSI, RDI, RBP, RSP,
-    R8, R9, R10, R11,
-    R12, R13, R14, R15,
-    RIP, EFLAGS, CS, SS,
-    DS, ES, FS, GS
-};
-
-/*
- * these should not be static cuz they can be used outside this module
- */
-long registers[NUMREGS];
-
-/***************************  ASSEMBLY CODE MACROS *************************/
-/*                                                                            */
-
-
-int hex(char ch)
-{
-    if ((ch >= 'a') && (ch <= 'f'))
-        return (ch - 'a' + 10);
-    if ((ch >= '0') && (ch <= '9'))
-        return (ch - '0');
-    if ((ch >= 'A') && (ch <= 'F'))
-        return (ch - 'A' + 10);
-    return -1;
-}
-
-
-static unsigned char remcomInBuffer[BUFMAX];
-
-
-/* scan for the sequence $<data>#<checksum>     */
-
-unsigned char *getpacket(void)
-{
-    unsigned char *buffer = &remcomInBuffer[0];
-    unsigned char checksum;
-    unsigned char xmitcsum;
-    int count;
-    char ch;
-
-    while (1) {
-        /* wait around for the start character, ignore all other characters */
-        do {
-            ch = getDebugChar();
-        } while (ch != '$');
-
-
-retry:
-        checksum = 0;
-        xmitcsum = -1;
-        count = 0;
-
-        /* now, read until a # or end of buffer is found */
-        while (count < BUFMAX - 1) {
-            ch = getDebugChar();
-            if (ch == '$')
-                goto retry;
-            if (ch == '#')
-                break;
-            checksum = checksum + ch;
-            buffer[count] = ch;
-            count = count + 1;
-        }
-        buffer[count] = 0;
-
-        if (ch == '#') {
-            ch = getDebugChar();
-            xmitcsum = hex(ch) << 4;
-            ch = getDebugChar();
-            xmitcsum += hex(ch);
-
-            if (checksum != xmitcsum) {
-                if (remote_debug) {
-                    fprintf(stderr,
-                            "bad checksum.  My count = 0x%x, sent=0x%x. buf=%s\n",
-                            checksum, xmitcsum, buffer);
-                }
-                putDebugChar('-');        /* failed checksum */
-            } else {
-                putDebugChar('+');        /* successful transfer */
-
-                /* if a sequence char is present, reply the sequence ID */
-                if (buffer[2] == ':') {
-                    putDebugChar(buffer[0]);
-                    putDebugChar(buffer[1]);
-
-                    return &buffer[3];
-                }
-
-                return &buffer[0];
-            }
-        }
-    }
-}
-
-/* send the packet in buffer.  */
-
-void putpacket(char *buffer)
-{
-    unsigned char checksum;
-    int count;
-    char ch;
-
-    /*  $<packet info>#<checksum>.  */
-    do {
-        putDebugChar('$');
-        checksum = 0;
-        count = 0;
-
-        ch = buffer[count];
-        while (ch) {
-            putDebugChar(ch);
-            checksum += ch;
-            count += 1;
-            ch = buffer[count];
-        }
-
-        putDebugChar('#');
-        putDebugChar(hexchars[checksum >> 4]);
-        putDebugChar(hexchars[checksum % 16]);
-        flush_debug_buffer();
-    } while (getDebugChar() != '+');
-}
-
-void debug_error(char *format, char *parm)
-{
-    if (remote_debug)
-        fprintf(stderr, format, parm);
-}
-
-
-/* Indicate to caller of mem2hex or hex2mem that there has been an error. */
-static volatile int mem_err;
-
-void set_mem_err(void)
-{
-    mem_err = 1;
-}
-
-/* These are separate functions so that they are so short and sweet
- * that the compiler won't save any registers (if there is a fault to
- * mem_fault, they won't get restored, so there better not be any
- * saved).
- */
-int get_char(char *addr)
-{
-    return *addr;
-}
-
-
-void set_char(char *addr, int val)
-{
-    *addr = val;
-}
-
-
-char *mem2hex(char *mem, char *buf, int count)
-{
-    int i;
-    unsigned char ch;
-
-    for (i = 0; i < count; i++) {
-        ch = get_char(mem++);
-        *buf++ = hexchars[ch >> 4];
-        *buf++ = hexchars[ch % 16];
-    }
-    *buf = 0;
-    return buf;
-}
-
-
-/* convert the hex array pointed to by buf into binary to be placed in mem */
-/* return a pointer to the character AFTER the last byte written */
-char *hex2mem(char *buf, char *mem, int count)
-{
-    int i;
-    unsigned char ch;
-
-    for (i = 0; i < count; i++) {
-        ch = hex(*buf++) << 4;
-        ch = ch + hex(*buf++);
-        set_char(mem++, ch);
-    }
-    return mem;
-}
-
-
-int gdb_is_pc_breakpointing(uint64_t addr)
-{
-    int i;
-
-    if (stepping)
-        return 1;
-
-    for (i = 0; i < MAX_BREAKPOINTS; i++) {
-        if (addr == breakpoints[i])
-            return 1;
-    }
-    return 0;
-}
-
-
-int gdb_insert_breakpoint(uint64_t addr)
-{
-    int i;
-
-    for (i = 0; i < MAX_BREAKPOINTS; i++) {
-        if (breakpoints[i] == 0) {
-            breakpoints[i] = addr;
-            return 1;
-        }
-    }
-    return 0;
-}
-
-
-int gdb_remove_breakpoint(uint64_t addr)
-{
-    int i;
-
-    for (i = 0; i < MAX_BREAKPOINTS; i++) {
-        if (addr == breakpoints[i])
-            breakpoints[i] = 0;
-    }
-    return 0;
-}
-
-int platform_get_regs(platform_vcpu_t vcpu, long *reg) {
     int ret;
     uint64_t v;
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RAX, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RAX, &v);
     assert(ret == 0);
     reg[RAX] = v;
 
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RBX, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RBX, &v);
     assert(ret == 0);
     reg[RBX] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RCX, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RCX, &v);
     assert(ret == 0);
     reg[RCX] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RDX, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RDX, &v);
     assert(ret == 0);
     reg[RDX] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RSI, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RSI, &v);
     assert(ret == 0);
     reg[RSI] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RDI, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RDI, &v);
     assert(ret == 0);
     reg[RDI] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RBP, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RBP, &v);
     assert(ret == 0);
     reg[RBP] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RSP, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RSP, &v);
     assert(ret == 0);
     reg[RSP] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_R8, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_R8, &v);
     assert(ret == 0);
     reg[R8] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_R9, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_R9, &v);
     assert(ret == 0);
     reg[R9] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_R10, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_R10, &v);
     assert(ret == 0);
     reg[R10] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_R11, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_R11, &v);
     assert(ret == 0);
     reg[R11] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_R12, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_R12, &v);
     assert(ret == 0);
     reg[R12] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_R13, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_R13, &v);
     assert(ret == 0);
     reg[R13] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_R14, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_R14, &v);
     assert(ret == 0);
     reg[R14] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_R15, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_R15, &v);
     assert(ret == 0);
     reg[R15] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RIP, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RIP, &v);
     assert(ret == 0);
     reg[RIP] = v;
     
-    ret = hv_vcpu_read_register(vcpu, HV_X86_RFLAGS, &v);
+    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RFLAGS, &v);
     assert(ret == 0);
     reg[EFLAGS] = v;
     
     return 0;
 }
 
-void gdb_handle_exception(uint8_t *mem, platform_vcpu_t vcpu, int sig)
-{
-    unsigned char *buffer;
-    char obuf[4096];
-    int ne = 0;
-
-    if (sig != 0) {
-        snprintf(obuf, sizeof(obuf), "S%02x", 5);
-        putpacket(obuf);
-    }
-
-    while (ne == 0) {
-        buffer = getpacket();
-
-        switch (buffer[0]) {
-        case 's': {
-            stepping = 1;
-            return;
-        }
-        case 'c': {
-            /* Disable stepping for the next instruction */
-            stepping = 0;
-            return; /* Continue with program */
-        }
-        case 'M': {
-            putpacket("OK");
-            break;
-        }
-        case 'm': {
-            uint64_t addr;
-            int len;
-            char *ebuf;
-
-            addr = strtoull((char *)&buffer[1], &ebuf, 16);
-            len = strtoul(ebuf + 1, NULL, 16);
-
-            if ((addr + len) >= GUEST_SIZE)
-                memset(obuf, '0', len);
-            else
-                mem2hex((char *)mem + addr, obuf, len);
-            putpacket(obuf);
-            break;
-        }
-        case 'P': {
-            putpacket("OK");
-            break;
-        }
-        case 'g': {
-            int ret;
-            ret = platform_get_regs(vcpu, registers);
-            assert(ret == 0);
-
-#if 0
-            struct kvm_regs regs;
-            int ret;
-
-            ret = ioctl(vcpufd, KVM_GET_REGS, &regs);
-            if (ret == -1)
-                err(1, "KVM_GET_REGS");
-
-            registers[RAX] = regs.rax;
-            registers[RBX] = regs.rbx;
-            registers[RCX] = regs.rcx;
-            registers[RDX] = regs.rdx;
-
-            registers[RSI] = regs.rsi;
-            registers[RDI] = regs.rdi;
-            registers[RBP] = regs.rbp;
-            registers[RSP] = regs.rsp;
-
-            registers[R8] = regs.r8;
-            registers[R9] = regs.r9;
-            registers[R10] = regs.r10;
-            registers[R11] = regs.r11;
-            registers[R12] = regs.r12;
-            registers[R13] = regs.r13;
-            registers[R14] = regs.r14;
-            registers[R15] = regs.r15;
-
-            registers[RIP] = regs.rip;
-            registers[EFLAGS] = regs.rflags;
-
-            /* TODO what about others like cs and ss? */
-#endif
-            mem2hex((char *) registers, obuf, NUMREGBYTES);
-            putpacket(obuf);
-            break;
-        }
-        case '?': {
-            sprintf(obuf, "S%02x", SIGTRAP);
-            putpacket(obuf);
-            break;
-        }
-        case 'H': {
-            putpacket("OK");
-            break;
-        }
-        case 'q': {
-            /* not supported */
-            putpacket("");
-            break;
-        }
-        case 'Z': {
-            /* insert a breakpoint */
-            char *ebuf;
-            uint64_t addr;
-            uint64_t type __attribute__((__unused__));
-            uint64_t len __attribute__((__unused__));
-
-            type = strtoull((char *)buffer + 1, &ebuf, 16);
-            addr = strtoull(ebuf + 1, &ebuf, 16);
-            len = strtoull(ebuf + 1, &ebuf, 16);
-
-            gdb_insert_breakpoint(addr);
-            putpacket("OK");
-            break;
-        }
-        case 'z': {
-            /* remove a breakpoint */
-            char *ebuf;
-            uint64_t addr;
-            uint64_t type __attribute__((__unused__));
-            uint64_t len __attribute__((__unused__));
-
-            type = strtoull((char *)buffer + 1, &ebuf, 16);
-            addr = strtoull(ebuf + 1, &ebuf, 16);
-            len = strtoull(ebuf + 1, &ebuf, 16);
-
-            gdb_remove_breakpoint(addr);
-            putpacket("OK");
-            break;
-        }
-        case 'k': {
-            printf("Debugger asked us to quit\n");
-            exit(1);
-        }
-        case 'D': {
-            printf("Debugger detached\n");
-            putpacket("OK");
-            return;
-        }
-        default:
-            putpacket("");
-            break;
-        }
-    }
-
-    return;
-}
-
-static void gdb_stub_start(platform_vcpu_t vcpu, uint8_t *mem)
-{
-    int i;
-
-    for (i = 0; i < MAX_BREAKPOINTS; i++)
-        breakpoints[i] = 0;
-
-    wait_for_connect(1234);
-    gdb_handle_exception(mem, vcpu, 0);
-}
-
-
-
-static int handle_exit(struct platform *p)
-{
-    uint64_t rip;
-    int ret;
-    
-    if (platform_get_exit_reason(p) != EXIT_DEBUG)
-        return -1;
-
-    ret = hv_vcpu_read_register(p->vcpu, HV_X86_RIP, &rip);
-    assert(ret == 0);
-
-    if (gdb_is_pc_breakpointing(rip))
-        gdb_handle_exception(p->mem, p->vcpu, 1);
-    
-    return 0;
-}
-
-static int setup(struct platform *p)
+void platform_enable_debug(struct platform *p)
 {
     int ret;
     uint64_t rflags;
     
-    if (!use_gdb)
-        return 0;
-
     ret = hv_vcpu_read_register(p->vcpu, HV_X86_RFLAGS, &rflags);
     assert(ret == 0);
-    ret = hv_vcpu_write_register(p->vcpu, HV_X86_RFLAGS, rflags | X86_EFLAGS_TF);
+    ret = hv_vcpu_write_register(p->vcpu, HV_X86_RFLAGS,
+                                 rflags | X86_EFLAGS_TF);
     assert(ret == 0);
-    
-    gdb_stub_start(p->vcpu, p->mem);
-
-    return 0;
 }
-
-static int handle_cmdarg(char *cmdarg)
-{
-    if (strncmp("--gdb", cmdarg, 5))
-        return -1;
-
-    use_gdb = 1;
-
-    return 0;
-}
-
-static int get_fd(void)
-{
-    return 0; /* no events for poll */
-}
-
-static char *usage(void)
-{
-    return "--gdb (optional flag for running in a gdb debug session)";
-}
-
-struct ukvm_module ukvm_gdb = {
-    .get_fd = get_fd,
-    .handle_exit = handle_exit,
-    .handle_cmdarg = handle_cmdarg,
-    .setup = setup,
-    .usage = usage
-};
 

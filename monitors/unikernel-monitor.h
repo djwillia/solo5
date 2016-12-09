@@ -25,6 +25,7 @@ struct platform {
     void *priv;
 };
 
+/* in <platform>/<platform>-core.c */
 int platform_init(struct platform **p);
 
 void platform_setup_system_64bit(struct platform *p, uint64_t cr0,
@@ -50,5 +51,26 @@ void platform_init_time(uint64_t *freq);
 void platform_get_timestamp(uint64_t *s, uint64_t *ns);
 uint64_t platform_get_exec_time(struct platform *p);
 void platform_emul_rdtsc(struct platform *p, uint64_t new_tsc);
+
+
+/* in <platform>/<platform>-gdb.c */
+int platform_enable_debug(struct platform *p);
+uint64_t platform_get_rip(struct platform *p);
+int platform_get_regs(struct platform *p, long *reg);
+
+/* XXX this doesn't belong here (for gdb) */
+/* Number of registers.  */
+#define NUMREGS        32
+/* Number of bytes of registers.  */
+#define NUMREGBYTES (NUMREGS * 8)
+/* list is here: gdb/amd64-linux-nat.c */
+enum regnames {
+    RAX, RBX, RCX, RDX,
+    RSI, RDI, RBP, RSP,
+    R8, R9, R10, R11,
+    R12, R13, R14, R15,
+    RIP, EFLAGS, CS, SS,
+    DS, ES, FS, GS
+};
 
 #endif
