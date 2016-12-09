@@ -651,4 +651,3 @@ struct ukvm_module ukvm_gdb = {
     .setup = setup,
     .usage = usage
 };
-

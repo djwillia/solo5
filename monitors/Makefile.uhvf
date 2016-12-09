@@ -1,13 +1,13 @@
 
 all: uhvf-bin
 
-UHVF_MODULE_OBJS=_build-uhvf/net.o _build-uhvf/blk.o _build-uhvf/gdb.o
+UHVF_MODULE_OBJS=_build-uhvf/net.o _build-uhvf/blk.o _build-uhvf/gdb.o _build-uhvf/uhvf-net.o _build-uhvf/uhvf-blk.o _build-uhvf/uhvf-gdb.o
 UHVF_MODULE_FLAGS=-DUKVM_MODULE_BLK -DUKVM_MODULE_NET -DUKVM_MODULE_GDB
 
 UHVF_CC=clang
 UHVF_FLAGS=-D__UKVM_HOST__ $(UHVF_MODULE_FLAGS)
 UHVF_CFLAGS=-Wall -Werror -g $(UHVF_FLAGS)
-UHVF_OBJS=_build-uhvf/core.o $(UHVF_MODULE_OBJS)
+UHVF_OBJS=_build-uhvf/core.o _build-uhvf/uhvf-core.o $(UHVF_MODULE_OBJS)
 UHVF_HEADERS=\
 ukvm-private.h \
 ukvm-modules.h \
@@ -17,7 +17,10 @@ ukvm.h
 _build-uhvf:
 	mkdir -p _build-uhvf
 
-_build-uhvf/%.o: %.c uhvf/uhvf-%.c _build-uhvf
+_build-uhvf/uhvf-%.o: uhvf/uhvf-%.c _build-uhvf
+	$(UHVF_CC) $(UHVF_CFLAGS) -c $< -o $@
+
+_build-uhvf/%.o: %.c _build-uhvf
 	$(UHVF_CC) $(UHVF_CFLAGS) -c $< -o $@
 
 uhvf-bin: $(UHVF_OBJS) $(UHVF_HEADERS)
