@@ -40,10 +40,7 @@
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>
 
-#include "../elf.h"
-#include "../elftypes.h"
-#include "../specialreg.h"
-
+#include "../ukvm-elf.h"
 #include "../ukvm-private.h"
 #include "../ukvm-cpu.h"
 #include "../ukvm.h"

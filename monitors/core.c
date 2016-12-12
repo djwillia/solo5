@@ -31,11 +31,8 @@
 #include <inttypes.h>
 #include <signal.h>
 
-#include "elf.h"
-#include "elftypes.h"
-#include "specialreg.h"
-
 /* from ukvm */
+#include "ukvm-elf.h"
 #include "ukvm-private.h"
 #include "ukvm-modules.h"
 #include "ukvm-cpu.h"
@@ -261,14 +258,15 @@ static void load_code(const char *file, uint8_t *mem,     /* IN */
 
 static void setup_system_64bit(struct platform *p)
 {
-    uint64_t cr0 = (CR0_NE | CR0_PE | CR0_PG) & ~(CR0_NW | CR0_CD);
-    uint64_t cr4 = CR4_PAE | CR4_VMXE;
-    uint64_t efer = EFER_LME | EFER_LMA;
+    uint64_t cr0 = (X86_CR0_NE | X86_CR0_PE | X86_CR0_PG)
+        & ~(X86_CR0_NW | X86_CR0_CD);
+    uint64_t cr4 = X86_CR4_PAE | X86_CR4_VMXE;
+    uint64_t efer = X86_EFER_LME | X86_EFER_LMA;
     
     if (1){
         /* enable sse */
-        cr0 = (cr0 | CR0_MP) & ~(CR0_EM);
-        cr4 = cr4 | CR4_FXSR | CR4_XMM; /* OSFXSR and OSXMMEXCPT */
+        cr0 = (cr0 | X86_CR0_MP) & ~(X86_CR0_EM);
+        cr4 = cr4 | X86_CR4_FXSR | X86_CR4_XMM; /* OSFXSR and OSXMMEXCPT */
     }
 
     platform_setup_system_64bit(p, cr0, cr4, efer);

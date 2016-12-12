@@ -2,6 +2,77 @@
  * CDDL HEADER START
  *
  * The contents of this file are subject to the terms of the
+ * Common Development and Distribution License, Version 1.0 only
+ * (the "License").  You may not use this file except in compliance
+ * with the License.
+ *
+ * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+ * or http://www.opensolaris.org/os/licensing.
+ * See the License for the specific language governing permissions
+ * and limitations under the License.
+ *
+ * When distributing Covered Code, include this CDDL HEADER in each
+ * file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+ * If applicable, add the following below this CDDL HEADER, with the
+ * fields enclosed by brackets "[]" replaced with your own identifying
+ * information: Portions Copyright [yyyy] [name of copyright owner]
+ *
+ * CDDL HEADER END
+ */
+/*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
+/*	  All Rights Reserved  	*/
+
+
+/*
+ * Copyright 2004 Sun Microsystems, Inc.  All rights reserved.
+ * Use is subject to license terms.
+ */
+
+#ifndef _SYS_ELFTYPES_H
+#define	_SYS_ELFTYPES_H
+
+#if defined(_LP64) || defined(_I32LPx)
+typedef unsigned int		Elf32_Addr;
+typedef unsigned short		Elf32_Half;
+typedef unsigned int		Elf32_Off;
+typedef int			Elf32_Sword;
+typedef unsigned int		Elf32_Word;
+#else
+typedef unsigned long		Elf32_Addr;
+typedef unsigned short		Elf32_Half;
+typedef unsigned long		Elf32_Off;
+typedef long			Elf32_Sword;
+typedef unsigned long		Elf32_Word;
+#endif
+
+#if defined(_LP64)
+typedef unsigned long		Elf64_Addr;
+typedef unsigned short		Elf64_Half;
+typedef unsigned long		Elf64_Off;
+typedef int			Elf64_Sword;
+typedef long			Elf64_Sxword;
+typedef	unsigned int		Elf64_Word;
+typedef	unsigned long		Elf64_Xword;
+typedef unsigned long		Elf64_Lword;
+typedef unsigned long		Elf32_Lword;
+#elif defined(_LONGLONG_TYPE)
+typedef unsigned long long	Elf64_Addr;
+typedef unsigned short		Elf64_Half;
+typedef unsigned long long	Elf64_Off;
+typedef int			Elf64_Sword;
+typedef long long		Elf64_Sxword;
+typedef	unsigned int		Elf64_Word;
+typedef	unsigned long long	Elf64_Xword;
+typedef	unsigned long long	Elf64_Lword;
+typedef unsigned long long	Elf32_Lword;
+#endif
+
+#endif	/* _SYS_ELFTYPES_H */
+
+/*
+ * CDDL HEADER START
+ *
+ * The contents of this file are subject to the terms of the
  * Common Development and Distribution License (the "License").
  * You may not use this file except in compliance with the License.
  *
@@ -29,25 +100,6 @@
 
 #ifndef _SYS_ELF_H
 #define	_SYS_ELF_H
-
-#if 0
-#if !defined(__APPLE__)
-#include <sys/elftypes.h>
-#else /* is Apple Mac OS X */
-
-#ifdef KERNEL
-#ifndef _KERNEL
-#define _KERNEL /* Solaris vs. Darwin */
-#endif
-#endif
-
-#endif /* __APPLE__ */
-#endif
-
-#include "elftypes.h" /* In lieu of Solaris <sys/elftypes.h> */
-#ifdef	__cplusplus
-extern "C" {
-#endif
 
 #define	ELF32_FSZ_ADDR	4
 #define	ELF32_FSZ_HALF	2
@@ -752,35 +804,5 @@ typedef struct {
 #define	NT_CONTENT	20	/* core_content_t <sys/corectl.h>	*/
 #define	NT_ZONENAME	21	/* string from getzonenamebyid(3C)	*/
 #define	NT_NUM		21
-
-
-#ifdef _KERNEL
-/*
- * The following routine checks the processor-specific
- * fields of an ELF header.
- */
-int	elfheadcheck(unsigned char, Elf32_Half, Elf32_Word);
-#endif
-
-#ifdef	__cplusplus
-}
-#endif
-
-#if defined(ELF_TARGET_ALL) || defined(ELF_TARGET_SPARC)
-#include <sys/elf_SPARC.h>
-#endif
-
-#if defined(ELF_TARGET_ALL) || defined(ELF_TARGET_386)
-
-#if !defined(__APPLE__)
-#include <sys/elf_386.h>
-#else /* is Apple Mac OS X */
-#include "elf_386.h" /* In lieu of Solaris <sys/elf_386.h> */
-#endif /* __APPLE__ */
-#endif
-
-#if defined(ELF_TARGET_ALL) || defined(ELF_TARGET_AMD64)
-#include <sys/elf_amd64.h>
-#endif
 
 #endif	/* _SYS_ELF_H */

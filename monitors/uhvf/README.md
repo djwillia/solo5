@@ -13,12 +13,7 @@ https://github.com/djwillia/dockerfiles.
 At the moment, uhvf can do the Solo5 hello test and ping_serve test
 and also run the Mirage console, stackv4, and block test (from
 mirage-skeleton).  At this point, uhvf should have all the features of
-ukvm.  Things left to do:
-
-- Lots of refactoring/cleanup.  `uhvf.c` and `ukvm-core.c` share a
-  bunch of code; there should be a common part and a platform specific
-  part at some point.  The same is true for the modules (e.g.,
-  `ukvm-net.c` and `uhvf-net.c`).
+ukvm.  
 
 For networking, I'm using the `vmnet` framework.  We can test ping by
 running the test_ping_serve unikernel:
