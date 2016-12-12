@@ -89,18 +89,41 @@
  *
  ****************************************************************************/
 
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <err.h>
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <signal.h>
+#include <netdb.h>
+#include <assert.h>
+
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>
 
-uint64_t platform_get_rip(struct platform_t *p)
+#include "../ukvm-private.h"
+#include "../ukvm-modules.h"
+#include "../ukvm-cpu.h"
+#include "../ukvm.h"
+#include "../unikernel-monitor.h"
+
+uint64_t platform_get_rip(struct platform *p)
 {
     int ret;
+    uint64_t rip;
+    
     ret = hv_vcpu_read_register(p->vcpu, HV_X86_RIP, &rip);
     assert(ret == 0);
     return rip;
 }
 
-int platform_get_regs(struct platform_t *p, long *reg)
+int platform_get_regs(struct platform *p, long *reg)
 {
     int ret;
     uint64_t v;
@@ -179,7 +202,7 @@ int platform_get_regs(struct platform_t *p, long *reg)
     return 0;
 }
 
-void platform_enable_debug(struct platform *p)
+int platform_enable_debug(struct platform *p)
 {
     int ret;
     uint64_t rflags;
@@ -189,5 +212,7 @@ void platform_enable_debug(struct platform *p)
     ret = hv_vcpu_write_register(p->vcpu, HV_X86_RFLAGS,
                                  rflags | X86_EFLAGS_TF);
     assert(ret == 0);
+
+    return 0;
 }
 

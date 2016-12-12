@@ -7,7 +7,10 @@ if [ "$#" -lt 1 ]; then
     exit 1
 fi
 
-UKVM_SRC=`readlink -f $1`
+
+# Hopefully a more portable way to get absolute path...
+UKVM_SRC=`(cd $(dirname $1)/$(basename $1) && pwd -P)`
+# UKVM_SRC=`readlink -f $1`
 if [ ! -d ${UKVM_SRC} -o ! -f ${UKVM_SRC}/core.c ]; then
     echo "Error: Not a ukvm source directory: ${UKVM_SRC}" 1>&2
     exit 1
