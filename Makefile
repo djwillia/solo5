@@ -23,6 +23,7 @@ include Makefile.common
 .PHONY: all
 all: ukvm virtio
 .DEFAULT_GOAL := all
+.NOTPARALLEL: ukvm virtio
 
 .PHONY: virtio
 virtio:
@@ -59,7 +60,6 @@ OPAM_VIRTIO_INCDIR=$(PREFIX)/include/solo5-kernel-virtio/include
 %.pc: %.pc.in
 	sed <$< > $@ \
 	    -e 's#!CFLAGS!#$(MD_CFLAGS)#g;' \
-	    -e 's#!LD!#$(LD)#g;' \
 	    -e 's#!LDFLAGS!#$(LDFLAGS)#g;'
 
 .PHONY: opam-virtio-install

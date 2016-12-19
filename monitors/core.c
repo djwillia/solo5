@@ -27,8 +27,6 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <assert.h>
-#include <libgen.h> /* for `basename` */
-#include <inttypes.h>
 #include <signal.h>
 
 /* from ukvm */
@@ -66,8 +64,6 @@ struct ukvm_module *modules[] = {
  * 0x002000    ukvm_boot_info
  * 0x001000    bootstrap gdt (contains correct code/data/ but tss points to 0)
  */
-
-#define GUEST_PAGE_SIZE 0x200000   /* 2 MB pages in guest */
 
 #define BOOT_GDT     0x1000
 #define BOOT_INFO    0x2000
@@ -118,7 +114,12 @@ static void setup_boot_info(uint8_t *mem,
 static ssize_t pread_in_full(int fd, void *buf, size_t count, off_t offset)
 {
     ssize_t total = 0;
-    char *p = (char *)buf;
+    char *p = buf;
+
+    if (count > SSIZE_MAX) {
+        errno = E2BIG;
+        return -1;
+    }
 
     lseek(fd, 0, SEEK_SET);
     while (count > 0) {
@@ -126,12 +127,12 @@ static ssize_t pread_in_full(int fd, void *buf, size_t count, off_t offset)
 
         lseek(fd, offset, SEEK_SET);
         nr = read(fd, p, count);
-        if (nr <= 0) {
-            if (total > 0)
-                return total;
-
+        if (nr == 0)
+            return total;
+        else if (nr == -1 && errno == EINTR)
+            continue;
+        else if (nr == -1)
             return -1;
-        }
 
         count -= nr;
         total += nr;
@@ -142,6 +143,7 @@ static ssize_t pread_in_full(int fd, void *buf, size_t count, off_t offset)
     return total;
 }
 
+
 /*
  * Load code from elf file into *mem and return the elf entry point
  * and the last byte of the program when loaded into memory. This
@@ -151,11 +153,11 @@ static ssize_t pread_in_full(int fd, void *buf, size_t count, off_t offset)
  *
  * Memory will look like this after the elf is loaded:
  *
- * *mem                    *p_entry                                 *p_end
- *   |             |                    |                |            |
- *   |    ...      | .text .rodata      |   .data .bss   |            |
- *   |             |        code        |   00000000000  | empty page |
- *   |             |  [PROT_EXEC|READ]  |                | PROT_NONE  |
+ * *mem                    *p_entry                   *p_end
+ *   |             |                    |                |
+ *   |    ...      | .text .rodata      |   .data .bss   |
+ *   |             |        code        |   00000000000  |
+ *   |             |  [PROT_EXEC|READ]  |                |
  *
  */
 static void load_code(const char *file, uint8_t *mem,     /* IN */
@@ -178,11 +180,13 @@ static void load_code(const char *file, uint8_t *mem,     /* IN */
 
     fd_kernel = open(file, O_RDONLY);
     if (fd_kernel == -1)
-        err(1, "couldn't open elf");
+        goto out_error;
 
     numb = pread_in_full(fd_kernel, &hdr, sizeof(Elf64_Ehdr), 0);
-    if (numb < 0 || (size_t) numb != sizeof(Elf64_Ehdr))
-        err(1, "unable to read ELF64 hdr");
+    if (numb < 0)
+        goto out_error;
+    if (numb != sizeof(Elf64_Ehdr))
+        goto out_invalid;
 
     /*
      * Validate program is in ELF64 format:
@@ -191,11 +195,14 @@ static void load_code(const char *file, uint8_t *mem,     /* IN */
      * 3. Objects are Executable,
      * 4. Target instruction set architecture is set to x86_64.
      */
-    if (hdr.e_ident[EI_MAG0] != ELFMAG0 || hdr.e_ident[EI_MAG1] != ELFMAG1 || \
-        hdr.e_ident[EI_MAG2] != ELFMAG2 || hdr.e_ident[EI_MAG3] != ELFMAG3 || \
-        hdr.e_ident[EI_CLASS] != ELFCLASS64 || hdr.e_type != ET_EXEC || \
-        hdr.e_machine != EM_X86_64)
-        errx(1, "%s is in invalid ELF64 format.", file);
+    if (hdr.e_ident[EI_MAG0] != ELFMAG0
+            || hdr.e_ident[EI_MAG1] != ELFMAG1
+            || hdr.e_ident[EI_MAG2] != ELFMAG2
+            || hdr.e_ident[EI_MAG3] != ELFMAG3
+            || hdr.e_ident[EI_CLASS] != ELFCLASS64
+            || hdr.e_type != ET_EXEC
+            || hdr.e_machine != EM_X86_64)
+        goto out_invalid;
 
     ph_off = hdr.e_phoff;
     ph_entsz = hdr.e_phentsize;
@@ -204,55 +211,77 @@ static void load_code(const char *file, uint8_t *mem,     /* IN */
 
     phdr = (Elf64_Phdr *)malloc(buflen);
     if (!phdr)
-        err(1, "unable to allocate program header buffer\n");
-
+        goto out_error;
     numb = pread_in_full(fd_kernel, phdr, buflen, ph_off);
-    if (numb < 0 || (size_t) numb != buflen)
-        err(1, "unable to read program header");
+    if (numb < 0)
+        goto out_error;
+    if (numb != buflen)
+        goto out_invalid;
 
     /*
      * Load all segments with the LOAD directive from the elf file at offset
      * p_offset, and copy that into p_addr in memory. The amount of bytes
      * copied is p_filesz.  However, each segment should be given
-     * ALIGN_UP(p_memsz, p_align) bytes on memory.
+     * p_memsz aligned up to p_align bytes on memory.
      */
     for (ph_i = 0; ph_i < ph_cnt; ph_i++) {
-        uint8_t *dst;
-        size_t _end;
+        uint8_t *daddr;
+        uint64_t _end;
         size_t offset = phdr[ph_i].p_offset;
         size_t filesz = phdr[ph_i].p_filesz;
         size_t memsz = phdr[ph_i].p_memsz;
         uint64_t paddr = phdr[ph_i].p_paddr;
         uint64_t align = phdr[ph_i].p_align;
+        uint64_t result;
 
-        if ((phdr[ph_i].p_type & PT_LOAD) == 0)
+        if (phdr[ph_i].p_type != PT_LOAD)
             continue;
 
-        dst = mem + paddr;
-
-        numb = pread_in_full(fd_kernel, dst, filesz, offset);
-        if (numb < 0 || (size_t) numb != filesz)
-            err(1, "unable to load segment");
-
-        memset(mem + paddr + filesz, 0, memsz - filesz);
-
-        /* Protect the executable code */
-        if (phdr[ph_i].p_flags & PF_X)
-            mprotect((void *) dst, memsz, PROT_EXEC | PROT_READ);
-
-        _end = ALIGN_UP(paddr + memsz, align);
+        if ((paddr >= GUEST_SIZE) || add_overflow(paddr, filesz, result)
+                || (result >= GUEST_SIZE))
+            goto out_invalid;
+        if (add_overflow(paddr, memsz, result) || (result >= GUEST_SIZE))
+            goto out_invalid;
+        /*
+         * Verify that align is a non-zero power of 2 and safely compute
+         * ((_end + (align - 1)) & -align).
+         */
+        if (align > 0 && (align & (align - 1)) == 0) {
+            if (add_overflow(result, (align - 1), _end))
+                goto out_invalid;
+            _end = _end & -align;
+        }
+        else {
+            _end = result;
+        }
         if (_end > *p_end)
             *p_end = _end;
+
+        daddr = mem + paddr;
+        numb = pread_in_full(fd_kernel, daddr, filesz, offset);
+        if (numb < 0)
+            goto out_error;
+        if (numb != filesz)
+            goto out_invalid;
+        memset(daddr + filesz, 0, memsz - filesz);
+
+        /* Write-protect the executable segment */
+        if (phdr[ph_i].p_flags & PF_X) {
+            if (mprotect(daddr, _end - paddr, PROT_EXEC | PROT_READ) == -1)
+                goto out_error;
+        }
     }
 
-    /*
-     * Not needed, but let's give it an empty page at the end for "safety".
-     * And, even protect it against any type of access.
-     */
-    mprotect((void *) ((uint64_t) mem + p_end), 0x1000, PROT_NONE);
-    *p_end += 0x1000;
-
+    free (phdr);
+    close (fd_kernel);
     *p_entry = hdr.e_entry;
+    return;
+
+out_error:
+    err(1, "%s", file);
+
+out_invalid:
+    errx(1, "%s: Exec format error", file);
 }
 
 
@@ -279,7 +308,7 @@ static void setup_system_page_tables(struct platform *p)
     uint64_t *pdpte = (uint64_t *) (p->mem + BOOT_PDPTE);
     uint64_t *pde = (uint64_t *) (p->mem + BOOT_PDE);
     uint64_t paddr;
-        
+
     /*
      * For simplicity we currently use 2MB pages and only a single
      * PML4/PDPTE/PDE.  Sanity check that the guest size is a multiple of the
@@ -334,16 +363,18 @@ void ukvm_port_puts(uint8_t *mem, uint64_t paddr)
     assert(write(1, mem + p->data, p->len) != -1);
 }
 
-static void ukvm_port_time_init(uint8_t *mem, uint32_t mem_off)
+static void ukvm_port_time_init(uint8_t *mem, uint64_t paddr)
 {
-    struct ukvm_time_init *p = (struct ukvm_time_init *) (mem + mem_off);
+    GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_time_init));
+    struct ukvm_time_init *p = (struct ukvm_time_init *) (mem + paddr);
 
     p->freq = tsc_freq;
 }
 
-static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
+static void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
 {
-    struct ukvm_poll *t = (struct ukvm_poll *) (mem + mem_off);
+    GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_poll));
+    struct ukvm_poll *t = (struct ukvm_poll *)(mem + paddr);
     uint64_t ts_s1, ts_ns1, ts_s2, ts_ns2;
 
     struct timespec ts;
@@ -361,14 +392,17 @@ static void ukvm_port_poll(uint8_t *mem, uint32_t mem_off)
             if (fd > max_fd) max_fd = fd;
         }
     }
+
     ts.tv_sec = t->timeout_nsecs / 1000000000ULL;
     ts.tv_nsec = t->timeout_nsecs % 1000000000ULL;
 
     /*
-     * Guest execution is blocked during the poll() call, note that
+     * Guest execution is blocked during the pselect() call, note that
      * interrupts will not be injected.
      */
-    rc = pselect(max_fd + 1, &readfds, NULL, NULL, &ts, NULL);
+    do {
+        rc = pselect(max_fd + 1, &readfds, NULL, NULL, &ts, NULL);
+    } while (rc == -1 && errno == EINTR);
     assert(rc >= 0);
 
     platform_get_timestamp(&ts_s2, &ts_ns2);
@@ -391,8 +425,7 @@ static int vcpu_loop(struct platform *p)
 
     /* Repeatedly run code and handle VM exits. */
     while (1) {
-        int i;
-        int handled = 0;
+        int i, handled = 0;
 
         if (platform_run(p))
             err(1, "Couldn't run vcpu");
@@ -406,13 +439,37 @@ static int vcpu_loop(struct platform *p)
 
         if (handled)
             continue;
-        
+
         switch (platform_get_exit_reason(p)) {
-        case EXIT_HLT: {
-            puts("Exiting due to HLT\n");
-            /* get_and_dump_sregs(vcpufd); */
+        case EXIT_HLT:
+            /* Guest has halted the CPU, this is considered as a normal exit. */
             return 0;
+
+        case EXIT_IO: {
+            int port = platform_get_io_port(p);
+
+            uint64_t paddr =
+                GUEST_PIO32_TO_PADDR(platform_get_io_data(p));
+
+            switch (port) {
+            case UKVM_PORT_PUTS:
+                ukvm_port_puts(p->mem, paddr);
+                break;
+            case UKVM_PORT_POLL:
+                ukvm_port_poll(p->mem, paddr);
+                break;
+            case UKVM_PORT_TIME_INIT:
+                ukvm_port_time_init(p->mem, paddr);
+                break;
+            default:
+                errx(1, "Invalid guest port access: port=0x%x", port);
+            };
+
+            platform_advance_rip(p);
+
+            break;
         }
+
         case EXIT_RDTSC: {
             uint64_t exec_time;
             uint64_t sleep_time;
@@ -452,38 +509,17 @@ static int vcpu_loop(struct platform *p)
             platform_advance_rip(p);
             break;
         }
-        case EXIT_IO: {
-            int port = platform_get_io_port(p);
-            uint64_t data = platform_get_io_data(p);
 
-            switch (port) {
-            case UKVM_PORT_PUTS:
-                ukvm_port_puts(p->mem, data);
-                break;
-            case UKVM_PORT_TIME_INIT:
-                ukvm_port_time_init(p->mem, data);
-                break;
-            case UKVM_PORT_POLL:
-                ukvm_port_poll(p->mem, data);
-                break;
-            default:
-                errx(1, "unhandled IO_PORT EXIT (0x%x)", port);
-                return -1;
-            };
-
-            platform_advance_rip(p);
-
+        case EXIT_IGNORE:
             break;
-        }
-        case EXIT_IGNORE: {
-            break;
-        }
+
         case EXIT_FAIL:
             return -1;
+
+        default:
+            errx(1, "Unhandled exit");
         }
     }
-    
-    return -1; /* never reached */
 }
 
 int setup_modules(struct platform *p)
@@ -492,7 +528,8 @@ int setup_modules(struct platform *p)
 
     for (i = 0; i < NUM_MODULES; i++) {
         if (modules[i]->setup(p)) {
-            printf("Please check you have correctly specified:\n %s\n",
+            warnx("Module `%s' setup failed", modules[i]->name);
+            warnx("Please check you have correctly specified:\n    %s",
                    modules[i]->usage());
             return -1;
         }
@@ -502,99 +539,102 @@ int setup_modules(struct platform *p)
 
 void sig_handler(int signo)
 {
-    printf("Received SIGINT. Exiting\n");
-    exit(0);
+    errx(1, "Exiting on signal %d", signo);
 }
 
 static void usage(const char *prog)
 {
     int m;
 
-    printf("usage: %s [ CORE OPTIONS ] [ MODULE OPTIONS ] KERNEL", prog);
-    printf(" [ -- ] [ ARGS ]\n");
-    printf("Core options:\n");
-    printf("    --help (display this help)\n");
-    printf("Compiled-in module options:\n");
+    fprintf(stderr, "usage: %s [ CORE OPTIONS ] [ MODULE OPTIONS ] [ -- ] "
+            "KERNEL [ ARGS ]\n", prog);
+    fprintf(stderr, "KERNEL is the filename of the unikernel to run.\n");
+    fprintf(stderr, "ARGS are optional arguments passed to the unikernel.\n");
+    fprintf(stderr, "Core options:\n");
+    fprintf(stderr, "    --help (display this help)\n");
+    fprintf(stderr, "Compiled-in module options:\n");
     for (m = 0; m < NUM_MODULES; m++)
-        printf("    %s\n", modules[m]->usage());
+        fprintf(stderr, "    %s\n", modules[m]->usage());
+    if (!m)
+        fprintf(stderr, "    (none)\n");
     exit(1);
 }
 
 int main(int argc, char **argv)
 {
+    struct platform *p;
     uint64_t elf_entry;
     uint64_t kernel_end;
-
-    struct platform *p;
-    
     const char *prog;
     const char *elffile;
     int matched;
-    
+    int rc;
+
     prog = basename(*argv);
     argc--;
     argv++;
-    
-    if (argc < 1)
-        usage(prog);
 
-    do {
+    while (*argv && *argv[0] == '-') {
         int j;
 
-        if (!strcmp("--help", *argv))
+        if (strcmp("--help", *argv) == 0)
             usage(prog);
+
+        if (strcmp("--", *argv) == 0) {
+            /* Consume and stop arg processing */
+            argc--;
+            argv++;
+            break;
+        }
 
         matched = 0;
         for (j = 0; j < NUM_MODULES; j++) {
-            if (!modules[j]->handle_cmdarg(*argv)) {
+            if (modules[j]->handle_cmdarg(*argv) == 0) {
+                /* Handled by module, consume and go on to next arg */
                 matched = 1;
                 argc--;
                 argv++;
                 break;
             }
         }
-    } while (matched && *argv);
-
-    if (!*argv)
-        usage(prog);
-
-    if (*argv[0] == '-') {
-        printf("Invalid option: %s\n", *argv);
-        return 1;
+        if (!matched) {
+            warnx("Invalid option: `%s'", *argv);
+            usage(prog);
+        }
     }
 
+    /* At least one non-option argument required */
+    if (*argv == NULL) {
+        warnx("Missing KERNEL operand");
+        usage(prog);
+    }
     elffile = *argv;
     argc--;
     argv++;
 
-    if (argc) {
-        if (strcmp("--", *argv))
-            usage(prog);
-        argc--;
-        argv++;
-    }
-
-    if (signal(SIGINT, sig_handler) == SIG_ERR)
-        err(1, "Can not catch SIGINT");
+    struct sigaction sa;
+    memset (&sa, 0, sizeof (struct sigaction));
+    sa.sa_handler = sig_handler;
+    sigfillset(&sa.sa_mask);
+    if (sigaction(SIGINT, &sa, NULL) == -1)
+        err(1, "Could not install signal handler");
+    if (sigaction(SIGTERM, &sa, NULL) == -1)
+        err(1, "Could not install signal handler");
 
     if (platform_init(&p))
         err(1, "platform init");
-    
+
     load_code(elffile, p->mem, &elf_entry, &kernel_end);
 
+    /* Setup x86 registers and memory */
     setup_system(p, elf_entry);
-    
     /* Setup ukvm_boot_info and command line */
     setup_boot_info(p->mem, GUEST_SIZE, kernel_end, argc, argv);
 
     if (setup_modules(p))
-        errx(1, "couldn't setup modules");
+        exit(1);
 
-    printf("going to vcpu loop\n");
-    /* vCPU run loop */
-    vcpu_loop(p);
-
+    rc = vcpu_loop(p);
     platform_cleanup(p);
-	return 0;
+	return rc;
 }
-

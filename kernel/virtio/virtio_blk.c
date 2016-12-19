@@ -78,9 +78,10 @@ static uint16_t virtio_blk_op(uint32_t type,
     head_buf->extra_flags = 0;
 
     /* The data buf */
-    if (type == VIRTIO_BLK_T_OUT) /* write */
+    if (type == VIRTIO_BLK_T_OUT) /* write */ {
         memcpy(data_buf->data, data, len);
-    else
+        data_buf->extra_flags = 0;
+    } else
         data_buf->extra_flags = VIRTQ_DESC_F_WRITE;
     data_buf->len = len;
 
@@ -180,6 +181,11 @@ void virtio_config_block(struct pci_config_info *pci)
 int solo5_blk_write_sync(uint64_t sector, uint8_t *data, int n)
 {
     assert(blk_configured);
+    /*
+     * XXX: virtio_blk_op_sync does not support >1 sectors per operation.
+     */
+    if (n > VIRTIO_BLK_SECTOR_SIZE)
+        return -1;
 
     return virtio_blk_op_sync(VIRTIO_BLK_T_OUT, sector, data, &n);
 }
@@ -187,6 +193,11 @@ int solo5_blk_write_sync(uint64_t sector, uint8_t *data, int n)
 int solo5_blk_read_sync(uint64_t sector, uint8_t *data, int *n)
 {
     assert(blk_configured);
+    /*
+     * XXX: virtio_blk_op_sync does not support >1 sectors per operation.
+     */
+    if (*n > VIRTIO_BLK_SECTOR_SIZE)
+        return -1;
 
     return virtio_blk_op_sync(VIRTIO_BLK_T_IN, sector, data, n);
 }
