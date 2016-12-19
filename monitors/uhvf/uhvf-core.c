@@ -426,7 +426,7 @@ int platform_get_io_port(struct platform *p)
 uint64_t platform_get_io_data(struct platform *p)
 {
     uint64_t rax = rreg(p->vcpu, HV_X86_RAX);
-    return rax;
+    return GUEST_PIO32_TO_PADDR(&rax);
 }
 
 void platform_advance_rip(struct platform *p)
