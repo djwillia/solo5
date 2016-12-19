@@ -28,6 +28,8 @@
 #include <sys/mman.h>
 #include <assert.h>
 #include <signal.h>
+#include <libgen.h>
+#include <limits.h>
 
 /* from ukvm */
 #include "ukvm-elf.h"
@@ -447,9 +449,8 @@ static int vcpu_loop(struct platform *p)
 
         case EXIT_IO: {
             int port = platform_get_io_port(p);
-
-            uint64_t paddr =
-                GUEST_PIO32_TO_PADDR(platform_get_io_data(p));
+            uint64_t data = platform_get_io_data(p);
+            uint64_t paddr = GUEST_PIO32_TO_PADDR(&data);
 
             switch (port) {
             case UKVM_PORT_PUTS:

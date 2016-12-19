@@ -77,7 +77,6 @@
  * (p) and (l) must be of type uint64_t. (sz) must be of type size_t or
  * compatible.
  */
-#if 0
 #define GUEST_CHECK_PADDR(p, l, sz)                                     \
     {                                                                          \
         uint64_t __e;                                                          \
@@ -86,9 +85,5 @@
                     "paddr=0x%" PRIx64 ", sz=%zu",                             \
                     __FILE__, __LINE__, p, sz);                                \
     }
-
-#else
-#define GUEST_CHECK_PADDR(p, l, sz) do{}while(0)
-#endif
 
 #endif
