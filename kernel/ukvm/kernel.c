@@ -21,11 +21,13 @@
 void _start(struct ukvm_boot_info *bi)
 {
     int ret;
-
-    printf("            |      ___|\n");
-    printf("  __|  _ \\  |  _ \\ __ \\\n");
-    printf("\\__ \\ (   | | (   |  ) |\n");
-    printf("____/\\___/ _|\\___/____/\n");
+    
+    if (!__quiet_boot) {
+        printf("            |      ___|\n");
+        printf("  __|  _ \\  |  _ \\ __ \\\n");
+        printf("\\__ \\ (   | | (   |  ) |\n");
+        printf("____/\\___/ _|\\___/____/\n");
+    }
 
     gdt_init();
     mem_init(bi->mem_size, bi->kernel_end);
@@ -38,7 +40,8 @@ void _start(struct ukvm_boot_info *bi)
     intr_enable();
 
     ret = solo5_app_main((char *)bi->cmdline);
-    printf("Solo5: solo5_app_main() returned with %d\n", ret);
+    if (!__quiet_boot)
+        printf("Solo5: solo5_app_main() returned with %d\n", ret);
 
     platform_exit();
 }

@@ -23,6 +23,7 @@
 
 /* This is the main header file for everything in the kernel */
 
+extern int __quiet_boot; /* in lib.c */
 
 /* common headers from the x86_64-elf gcc cross compiler */
 #include <stdbool.h>

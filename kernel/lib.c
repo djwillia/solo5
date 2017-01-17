@@ -17,6 +17,7 @@
  */
 
 #include "kernel.h"
+int __quiet_boot = 1;
 
 void *memset(void *ptr, uint8_t c, size_t size)
 {

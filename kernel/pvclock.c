@@ -134,7 +134,8 @@ int pvclock_init(void) {
         return 1;
     }
 
-    printf("Solo5: Clock source: KVM paravirtualized clock\n");
+    if (!__quiet_boot)
+        printf("Solo5: Clock source: KVM paravirtualized clock\n");
 
     __asm__ __volatile("wrmsr" ::
         "c" (msr_kvm_system_time),
