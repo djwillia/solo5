@@ -49,6 +49,7 @@
 
 #include <mach-o/loader.h>
 #include <mach/machine/thread_status.h>
+#include <dispatch/dispatch.h>
 
 #ifdef __MACH__
 #include <mach/clock.h>
@@ -327,6 +328,12 @@ void platform_setup_system(struct platform *p, uint64_t entry,
     wvmcs((v), (t), setting);                       \
     } while (0)                                     \
 
+
+dispatch_semaphore_t poll_sema;
+static void platform_sema_init(void) {
+    poll_sema = dispatch_semaphore_create(0);
+}
+
 int platform_init(struct platform **pdata_p)
 {
     hv_vcpuid_t vcpu;
@@ -416,6 +423,8 @@ int platform_init(struct platform **pdata_p)
     platform.vcpu = vcpu;
     platform.priv = NULL;
 
+    platform_sema_init();
+    
     *pdata_p = &platform;
 
     return 0;
@@ -614,4 +623,10 @@ void platform_emul_rdrand(struct platform *p, uint64_t r)
         errx(1, "non-64-bit rdrand unimplemented\n");
 
     wreg(p->vcpu, HV_X86_RAX, r);
+}
+
+
+void platform_poll(uint64_t timeout)
+{
+    dispatch_semaphore_wait(poll_sema, dispatch_time(DISPATCH_TIME_NOW, timeout));
 }

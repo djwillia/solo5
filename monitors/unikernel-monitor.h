@@ -61,6 +61,7 @@ void platform_emul_rdrand(struct platform *p, uint64_t r);
 uint64_t platform_get_reg(struct platform *p, int reg);
 void platform_set_reg(struct platform *p, int reg, uint64_t val);
 
+void platform_poll(uint64_t timeout);
 
 /* in <platform>/<platform>-gdb.c */
 int platform_enable_debug(struct platform *p);

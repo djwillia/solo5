@@ -49,8 +49,10 @@ static void vmn_enable_notifications(void)
                                        vms.if_q,
     ^(interface_event_t event_id, xpc_object_t event)
     {
+        extern dispatch_semaphore_t poll_sema;
+        dispatch_semaphore_signal(poll_sema);
+#if 0
         size_t num_written;
-
         num_written = write(vms.write_fd, "x", 1);
         assert(num_written == 1);
 
@@ -59,6 +61,7 @@ static void vmn_enable_notifications(void)
                                            VMNET_INTERFACE_PACKETS_AVAILABLE,
                                            NULL,
                                            NULL);
+#endif
     });
 }
 
@@ -158,6 +161,7 @@ static ssize_t vmn_read(uint8_t *data, int len)
     pktcnt = 1;
 
     r = vmnet_read(vms.iface, &v, &pktcnt);
+#if 0
     {
         char throwaway;
         size_t num_read;
@@ -168,7 +172,7 @@ static ssize_t vmn_read(uint8_t *data, int len)
         /* We're ready now for another notification. */
         vmn_enable_notifications();
     }
-
+#endif
     assert(r == VMNET_SUCCESS);
 
     if (pktcnt < 1)
@@ -227,15 +231,15 @@ static void ukvm_port_netread(uint8_t *mem, uint64_t paddr)
 {
     GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_netread));
     struct ukvm_netread *rd = (struct ukvm_netread *)(mem + paddr);
-    int ret;
+    int ret = 0;
 
     GUEST_CHECK_PADDR(rd->data, GUEST_SIZE, rd->len);
     ret = vmn_read(mem + rd->data, rd->len);
-    if (ret == 0) {
+    if (ret < 0) {
         rd->ret = -1;
         return;
     }
-    assert(ret > 0);
+
     rd->len = ret;
     rd->ret = 0;
 }

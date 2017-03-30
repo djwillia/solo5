@@ -230,6 +230,7 @@ static void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
     ts.tv_sec = t->timeout_nsecs / 1000000000ULL;
     ts.tv_nsec = t->timeout_nsecs % 1000000000ULL;
 
+#if 0
     /*
      * Guest execution is blocked during the pselect() call, note that
      * interrupts will not be injected.
@@ -238,11 +239,15 @@ static void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
         rc = pselect(max_fd + 1, &readfds, NULL, NULL, &ts, NULL);
     } while (rc == -1 && errno == EINTR);
     assert(rc >= 0);
-
+#else
+    /* XXX only one type of event will work (network) */
+    platform_poll(t->timeout_nsecs);
+    rc = 1;
+#endif
     platform_get_timestamp(&ts_s2, &ts_ns2);
     sleep_time_s += ts_s2 - ts_s1;
     sleep_time_ns += ts_ns2 - ts_ns1;
-
+    
     t->ret = rc;
 }
 
