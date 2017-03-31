@@ -38,6 +38,7 @@
 #include "ukvm-cpu.h"
 #include "ukvm.h"
 #include "unikernel-monitor.h"
+#include "ukvm-rr.h"
 
 struct ukvm_module *modules[] = {
 #ifdef UKVM_MODULE_BLK
@@ -52,6 +53,32 @@ struct ukvm_module *modules[] = {
     NULL,
 };
 #define NUM_MODULES ((sizeof(modules) / sizeof(struct ukvm_module *)) - 1)
+
+//#define RR_MODE RR_MODE_RECORD
+#define RR_MODE RR_MODE_REPLAY
+
+/* RR_INPUT or RR_INPUT_REDO
+ *    (struct name, pointer to struct, offset for any data ptrs) 
+ *    Redo re-performs the function (e.g., for console out) 
+ */
+
+#define _RR_INPUT(s,p,m,r) do {                      \
+        rr_ukvm_##s(p, m, RR_LOC_IN);                \
+        if (rr_mode == RR_MODE_REPLAY) {             \
+            printf("replaying for %s\n", #s);        \
+            if(!r) goto rr_output;                   \
+        }                                            \
+    } while (0)
+
+#define RR_INPUT_REDO(s,i,m) _RR_INPUT(s,i,m,0)
+#define RR_INPUT(s,i,m) _RR_INPUT(s,i,m,1)
+          
+#define RR_OUTPUT(s,i,m) do {                   \
+    rr_output:                                  \
+        rr_ukvm_##s(i, m, RR_LOC_OUT);          \
+    } while (0)
+
+
 
 /*
  * Memory map:
@@ -100,6 +127,8 @@ static void setup_boot_info(uint8_t *mem,
     bi->cmdline = cmdline;
     cmdline_p[0] = 0;
 
+    RR_INPUT(boot_info, bi, mem);
+    
     for (; *argv; argc--, argv++) {
         size_t alen = snprintf(cmdline_p, cmdline_free, "%s%s", *argv,
                 (argc > 1) ? " " : "");
@@ -111,6 +140,7 @@ static void setup_boot_info(uint8_t *mem,
         cmdline_p += alen;
     }
 
+    RR_OUTPUT(boot_info, bi, mem);
 }
 
 static void setup_system_64bit(struct platform *p)
@@ -184,9 +214,15 @@ void ukvm_port_puts(uint8_t *mem, uint64_t paddr)
 {
     GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_puts));
     struct ukvm_puts *p = (struct ukvm_puts *)(mem + paddr);
-
+    int ret;
     GUEST_CHECK_PADDR(p->data, GUEST_SIZE, p->len);
-    assert(write(1, mem + p->data, p->len) != -1);
+
+    RR_INPUT_REDO(puts, p, mem);
+    
+    ret = write(1, mem + p->data, p->len);
+    assert(ret != -1);
+
+    RR_OUTPUT(puts, p, mem);
 }
 
 static void ukvm_port_time_init(uint8_t *mem, uint64_t paddr)
@@ -196,13 +232,18 @@ static void ukvm_port_time_init(uint8_t *mem, uint64_t paddr)
     struct timeval tv;
     int ret;
 
+    RR_INPUT(time_init, p, mem);
+    
     p->freq = tsc_freq;
     ret = gettimeofday(&tv, NULL);
     assert(ret == 0);
     /* get ns since epoch */
     p->rtc_boot = (((uint64_t)tv.tv_sec * 1000000)
                    + (uint64_t)tv.tv_usec) * 1000;
+
+    RR_OUTPUT(time_init, p, mem);
 }
+
 
 static void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
 {
@@ -210,6 +251,8 @@ static void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
     struct ukvm_poll *t = (struct ukvm_poll *)(mem + paddr);
     uint64_t ts_s1, ts_ns1, ts_s2, ts_ns2;
 
+    RR_INPUT(poll, t, mem);
+    
     struct timespec ts;
     int rc, i, max_fd = 0;
     fd_set readfds;
@@ -249,6 +292,8 @@ static void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
     sleep_time_ns += ts_ns2 - ts_ns1;
     
     t->ret = rc;
+
+    RR_OUTPUT(poll, t, mem);
 }
 
 static void tsc_init(void)
@@ -493,6 +538,8 @@ int main(int argc, char **argv)
     argc--;
     argv++;
 
+    rr_init(RR_MODE, "rr_output.dat", "rr_check.dat");
+    
     memset(&sa, 0, sizeof (struct sigaction));
     sa.sa_handler = sig_handler;
     sigfillset(&sa.sa_mask);
