@@ -396,7 +396,7 @@ int platform_init(struct platform **pdata_p)
      * necessary for a bunch of things to work, including
      * CPU_BASED_HLT (bit 7) and MONITOR_TRAP_FLAG (bit 27)
      */
-    if (1) {
+    if (0) {
     VMX_CTRLS(vcpu, HV_VMX_CAP_PROCBASED, VMCS_CTRL_CPU_BASED, 0
               | CPU_BASED_HLT | CPU_BASED_INVLPG
               | CPU_BASED_MWAIT | CPU_BASED_RDPMC

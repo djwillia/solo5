@@ -53,7 +53,7 @@ UKVM_MODULE_FLAGS=\$(addprefix -DUKVM_MODULE_,\$(shell echo ${UKVM_MODULES}| tr 
 UKVM_CC?=cc
 UKVM_FLAGS=-D__UKVM_HOST__ \$(UKVM_MODULE_FLAGS)
 UKVM_CFLAGS=-Wall -Werror -std=c99 -O2 -g \$(UKVM_FLAGS)
-UKVM_OBJS=_build-ukvm/core.o _build-ukvm/${MON}-core.o \$(UKVM_MODULE_OBJS)
+UKVM_OBJS=_build-ukvm/core.o _build-ukvm/${MON}-core.o \$(UKVM_MODULE_OBJS) _build-ukvm/rr.o
 ifdef UKVM_STATIC
 UKVM_LDFLAGS=-static
 endif

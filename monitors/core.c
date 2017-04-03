@@ -63,18 +63,18 @@ struct ukvm_module *modules[] = {
  */
 //            printf("replaying for %s\n", #s);       
 
-#define _RR_INPUT(s,p,m,r) do {                      \
-        rr_ukvm_##s(p, m, RR_LOC_IN);                \
+#define _RR_INPUT(p,s,o,r) do {                      \
+        rr_ukvm_##s(p, o, RR_LOC_IN);                \
         if (rr_mode == RR_MODE_REPLAY)               \
-            if(r) goto rr_output;                    \
+            if(r) goto rr_output_##s;                \
     } while (0)
 
-#define RR_INPUT_REDO(s,i,m) _RR_INPUT(s,i,m,0)
-#define RR_INPUT(s,i,m) _RR_INPUT(s,i,m,1)
+#define RR_INPUT_REDO(p,s,o) _RR_INPUT(p,s,o,0)
+#define RR_INPUT(p,s,o) _RR_INPUT(p,s,o,1)
           
-#define RR_OUTPUT(s,i,m) do {                   \
-    rr_output:                                  \
-        rr_ukvm_##s(i, m, RR_LOC_OUT);          \
+#define RR_OUTPUT(p,s,o) do {                   \
+    rr_output_##s:                              \
+        rr_ukvm_##s(p, o, RR_LOC_OUT);          \
     } while (0)
 
 
@@ -111,22 +111,22 @@ static uint64_t sleep_time_s;  /* track unikernel sleeping time */
 static uint64_t sleep_time_ns;
 static uint64_t tsc_freq;
 
-static void setup_boot_info(uint8_t *mem,
+static void setup_boot_info(struct platform *p,
                             uint64_t size,
                             uint64_t kernel_end,
                             int argc, char **argv)
 {
-    struct ukvm_boot_info *bi = (struct ukvm_boot_info *)(mem + BOOT_INFO);
+    struct ukvm_boot_info *bi = (struct ukvm_boot_info *)(p->mem + BOOT_INFO);
     uint64_t cmdline = BOOT_INFO + sizeof(struct ukvm_boot_info);
     size_t cmdline_free = BOOT_PML4 - cmdline - 1;
-    char *cmdline_p = (char *)(mem + cmdline);
+    char *cmdline_p = (char *)(p->mem + cmdline);
 
     bi->mem_size = size;
     bi->kernel_end = kernel_end;
     bi->cmdline = cmdline;
     cmdline_p[0] = 0;
 
-    RR_INPUT(boot_info, bi, mem);
+    RR_INPUT(p, boot_info, bi);
     
     for (; *argv; argc--, argv++) {
         size_t alen = snprintf(cmdline_p, cmdline_free, "%s%s", *argv,
@@ -139,7 +139,7 @@ static void setup_boot_info(uint8_t *mem,
         cmdline_p += alen;
     }
 
-    RR_OUTPUT(boot_info, bi, mem);
+    RR_OUTPUT(p, boot_info, bi);
 }
 
 static void setup_system_64bit(struct platform *p)
@@ -209,48 +209,48 @@ static void setup_system(struct platform *p, uint64_t entry)
     platform_setup_system(p, entry, BOOT_INFO);
 }
 
-void ukvm_port_puts(uint8_t *mem, uint64_t paddr)
+void ukvm_port_puts(struct platform *p, uint64_t paddr)
 {
     GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_puts));
-    struct ukvm_puts *p = (struct ukvm_puts *)(mem + paddr);
+    struct ukvm_puts *o = (struct ukvm_puts *)(p->mem + paddr);
     int ret;
-    GUEST_CHECK_PADDR(p->data, GUEST_SIZE, p->len);
+    GUEST_CHECK_PADDR(o->data, GUEST_SIZE, o->len);
 
-    RR_INPUT_REDO(puts, p, mem);
+    RR_INPUT_REDO(p, puts, o);
     
-    ret = write(1, mem + p->data, p->len);
+    ret = write(1, p->mem + o->data, o->len);
     assert(ret != -1);
 
-    RR_OUTPUT(puts, p, mem);
+    RR_OUTPUT(p, puts, o);
 }
 
-static void ukvm_port_time_init(uint8_t *mem, uint64_t paddr)
+static void ukvm_port_time_init(struct platform *p, uint64_t paddr)
 {
     GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_time_init));
-    struct ukvm_time_init *p = (struct ukvm_time_init *) (mem + paddr);
+    struct ukvm_time_init *o = (struct ukvm_time_init *) (p->mem + paddr);
     struct timeval tv;
     int ret;
 
-    RR_INPUT(time_init, p, mem);
+    RR_INPUT(p, time_init, o);
     
-    p->freq = tsc_freq;
+    o->freq = tsc_freq;
     ret = gettimeofday(&tv, NULL);
     assert(ret == 0);
     /* get ns since epoch */
-    p->rtc_boot = (((uint64_t)tv.tv_sec * 1000000)
+    o->rtc_boot = (((uint64_t)tv.tv_sec * 1000000)
                    + (uint64_t)tv.tv_usec) * 1000;
 
-    RR_OUTPUT(time_init, p, mem);
+    RR_OUTPUT(p, time_init, o);
 }
 
 
-static void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
+static void ukvm_port_poll(struct platform *p, uint64_t paddr)
 {
     GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_poll));
-    struct ukvm_poll *t = (struct ukvm_poll *)(mem + paddr);
+    struct ukvm_poll *t = (struct ukvm_poll *)(p->mem + paddr);
     uint64_t ts_s1, ts_ns1, ts_s2, ts_ns2;
 
-    RR_INPUT(poll, t, mem);
+    RR_INPUT(p, poll, t);
     
     struct timespec ts;
     int rc, i, max_fd = 0;
@@ -292,7 +292,7 @@ static void ukvm_port_poll(uint8_t *mem, uint64_t paddr)
     
     t->ret = rc;
 
-    RR_OUTPUT(poll, t, mem);
+    RR_OUTPUT(p, poll, t);
 }
 
 static void tsc_init(void)
@@ -337,13 +337,13 @@ static int vcpu_loop(struct platform *p)
 
             switch (port) {
             case UKVM_PORT_PUTS:
-                ukvm_port_puts(p->mem, paddr);
+                ukvm_port_puts(p, paddr);
                 break;
             case UKVM_PORT_POLL:
-                ukvm_port_poll(p->mem, paddr);
+                ukvm_port_poll(p, paddr);
                 break;
             case UKVM_PORT_TIME_INIT:
-                ukvm_port_time_init(p->mem, paddr);
+                ukvm_port_time_init(p, paddr);
                 break;
             default:
                 errx(1, "Invalid guest port access: port=0x%x", port);
@@ -357,10 +357,12 @@ static int vcpu_loop(struct platform *p)
         case EXIT_RDTSC: {
             uint64_t exec_time;
             uint64_t sleep_time;
-            uint64_t new_tsc;
+            uint64_t new_tsc = 0;
             double tsc_f;
             int dbg_sanity_check_rdtsc = 0;
 
+            RR_INPUT(p, rdtsc, &new_tsc);
+            
             dbg_rdtsc_cnt++;
             exec_time = platform_get_exec_time(p);
 
@@ -389,6 +391,8 @@ static int vcpu_loop(struct platform *p)
                 last_tsc = new_tsc;
             }
 
+            RR_OUTPUT(p, rdtsc, &new_tsc);
+            
             platform_emul_rdtsc(p, new_tsc);
             platform_advance_rip(p);
             break;
@@ -426,8 +430,13 @@ static int vcpu_loop(struct platform *p)
         }
             
         case EXIT_RDRAND: {
-            uint64_t r;
+            uint64_t r = 0;
+            RR_INPUT(p, rdrand, &r);
+            
             __asm__ volatile ("rdrand %0;":"=r"(r));
+
+            RR_OUTPUT(p, rdrand, &r);
+
             platform_emul_rdrand(p, r);
             platform_advance_rip(p);
             break;
@@ -555,7 +564,7 @@ int main(int argc, char **argv)
     /* Setup x86 registers and memory */
     setup_system(p, entrypoint);
     /* Setup ukvm_boot_info and command line */
-    setup_boot_info(p->mem, GUEST_SIZE, kernel_end, argc, argv);
+    setup_boot_info(p, GUEST_SIZE, kernel_end, argc, argv);
 
     if (setup_modules(p))
         exit(1);

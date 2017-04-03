@@ -12,16 +12,18 @@ enum {
 
 extern int rr_mode;
 
-void rr_ukvm_puts(struct ukvm_puts *p, uint8_t *mem, int loc);
-void rr_ukvm_boot_info(struct ukvm_boot_info *p, uint8_t *mem, int loc);
-void rr_ukvm_blkinfo(struct ukvm_blkinfo *p, uint8_t *mem, int loc);
-void rr_ukvm_blkwrite(struct ukvm_blkwrite *p, uint8_t *mem, int loc);
-void rr_ukvm_blkread(struct ukvm_blkread *p, uint8_t *mem, int loc);
-void rr_ukvm_netinfo(struct ukvm_netinfo *p, uint8_t *mem, int loc);
-void rr_ukvm_netwrite(struct ukvm_netwrite *p, uint8_t *mem, int loc);
-void rr_ukvm_netread(struct ukvm_netread *p, uint8_t *mem, int loc);
-void rr_ukvm_poll(struct ukvm_poll *p, uint8_t *mem, int loc);
-void rr_ukvm_time_init(struct ukvm_time_init *p, uint8_t *mem, int loc);
+void rr_ukvm_puts(struct platform *p, struct ukvm_puts *o, int loc);
+void rr_ukvm_boot_info(struct platform *p, struct ukvm_boot_info *o, int loc);
+void rr_ukvm_blkinfo(struct platform *p, struct ukvm_blkinfo *o, int loc);
+void rr_ukvm_blkwrite(struct platform *p, struct ukvm_blkwrite *o, int loc);
+void rr_ukvm_blkread(struct platform *p, struct ukvm_blkread *o, int loc);
+void rr_ukvm_netinfo(struct platform *p, struct ukvm_netinfo *o, int loc);
+void rr_ukvm_netwrite(struct platform *p, struct ukvm_netwrite *o, int loc);
+void rr_ukvm_netread(struct platform *p, struct ukvm_netread *o, int loc);
+void rr_ukvm_poll(struct platform *p, struct ukvm_poll *o, int loc);
+void rr_ukvm_time_init(struct platform *p, struct ukvm_time_init *o, int loc);
+void rr_ukvm_rdtsc(struct platform *p, uint64_t *new_tsc, int loc);
+void rr_ukvm_rdrand(struct platform *p, uint64_t *r, int loc);
 
 int rr_init(int m, char *rr_file, char *check_file);
 #endif
