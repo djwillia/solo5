@@ -61,13 +61,12 @@ struct ukvm_module *modules[] = {
  *    (struct name, pointer to struct, offset for any data ptrs) 
  *    Redo re-performs the function (e.g., for console out) 
  */
+//            printf("replaying for %s\n", #s);       
 
 #define _RR_INPUT(s,p,m,r) do {                      \
         rr_ukvm_##s(p, m, RR_LOC_IN);                \
-        if (rr_mode == RR_MODE_REPLAY) {             \
-            printf("replaying for %s\n", #s);        \
-            if(!r) goto rr_output;                   \
-        }                                            \
+        if (rr_mode == RR_MODE_REPLAY)               \
+            if(r) goto rr_output;                    \
     } while (0)
 
 #define RR_INPUT_REDO(s,i,m) _RR_INPUT(s,i,m,0)

@@ -110,65 +110,65 @@ int rr_init(int m, char *rr_file, char *check_file)
     return 0;
 }
 
-void rr_ukvm_puts(struct ukvm_puts *p, int loc)
+void rr_ukvm_puts(struct ukvm_puts *p, uint8_t *mem, int loc)
 {
     CHECK(loc, &p->data, sizeof(p->data));
-    //CHECK(loc, p->data, p->len);
+    CHECK(loc, mem + p->data, p->len);
     CHECK(loc, &p->len, sizeof(p->len));
 }
     
-void rr_ukvm_boot_info(struct ukvm_boot_info *p, int loc)
+void rr_ukvm_boot_info(struct ukvm_boot_info *p, uint8_t *mem, int loc)
 {
     RR(loc, p->mem_size);
     RR(loc, p->kernel_end);
     RR(loc, p->cmdline);
 }
-void rr_ukvm_blkinfo(struct ukvm_blkinfo *p, int loc)
+void rr_ukvm_blkinfo(struct ukvm_blkinfo *p, uint8_t *mem, int loc)
 {
 	RR(loc, p->sector_size);
     RR(loc, p->num_sectors);
     RR(loc, p->rw);
 }
-void rr_ukvm_blkwrite(struct ukvm_blkwrite *p, int loc)
+void rr_ukvm_blkwrite(struct ukvm_blkwrite *p, uint8_t *mem, int loc)
 {
     CHECK(loc, &p->sector, sizeof(p->sector));
     CHECK(loc, &p->data, sizeof(p->data));
-    //CHECK(loc, p->data, p->len);
+    CHECK(loc, mem + p->data, p->len);
     CHECK(loc, &p->len, sizeof(p->len));
     RR(loc, p->ret);
 }
-void rr_ukvm_blkread(struct ukvm_blkread *p, int loc)
+void rr_ukvm_blkread(struct ukvm_blkread *p, uint8_t *mem, int loc)
 {
     CHECK(loc, &p->sector, sizeof(p->sector));
     CHECK(loc, &p->data, sizeof(p->data));
-    //CHECK(loc, p->data, p->len);
+    CHECK(loc, mem + p->data, p->len);
 	RR(loc, p->len);
 	RR(loc, p->ret);
 }
-void rr_ukvm_netinfo(struct ukvm_netinfo *p, int loc)
+void rr_ukvm_netinfo(struct ukvm_netinfo *p, uint8_t *mem, int loc)
 {
     RR(loc, p->mac_str);
 }
-void rr_ukvm_netwrite(struct ukvm_netwrite *p, int loc)
+void rr_ukvm_netwrite(struct ukvm_netwrite *p, uint8_t *mem, int loc)
 {
     CHECK(loc, &p->data, sizeof(p->data));
-    //CHECK(loc, p->data, p->len);
+    CHECK(loc, mem + p->data, p->len);
     CHECK(loc, &p->len, sizeof(p->len));
 	RR(loc, p->ret);
 }
-void rr_ukvm_netread(struct ukvm_netread *p, int loc)
+void rr_ukvm_netread(struct ukvm_netread *p, uint8_t *mem, int loc)
 {
     CHECK(loc, &p->data, sizeof(p->data));
-    //CHECK(loc, p->data, p->len);
+    CHECK(loc, mem + p->data, p->len);
 	RR(loc, p->len);
 	RR(loc, p->ret);
 }
-void rr_ukvm_poll(struct ukvm_poll *p, int loc)
+void rr_ukvm_poll(struct ukvm_poll *p, uint8_t *mem, int loc)
 {
     CHECK(loc, &p->timeout_nsecs, sizeof(p->timeout_nsecs));
     RR(loc, p->ret);
 }
-void rr_ukvm_time_init(struct ukvm_time_init *p, int loc)
+void rr_ukvm_time_init(struct ukvm_time_init *p, uint8_t *mem, int loc)
 {
 	RR(loc, p->freq);
     RR(loc, p->rtc_boot);
