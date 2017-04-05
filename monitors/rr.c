@@ -54,12 +54,19 @@ uint32_t do_crc32(uint8_t *mem, size_t sz) {
     return crc;
 }
 
-#define BUG_ADDR 0x100e14
+#define BUG_ADDR 0xfffffffff
 
 void heavy_check_checks(FILE *fp, struct platform *p, const char *func)
 {
     int i;
 
+    memset(check_buf, 0, CHK_BUF_SZ);
+    fscanf(fp, "function: %s\n", check_buf);
+    if (memcmp(check_buf, func, strlen(func)))
+        printf("out of order execution detected: got %s, expected %s\n",
+               func, check_buf);
+    assert(memcmp(check_buf, func, strlen(func)) == 0);
+    
     if (rreg(p->vcpu, HV_X86_RIP) == BUG_ADDR) {
         fscanf(fp, "memory: ");
         for (i = 0; i < GUEST_SIZE; i++) {
@@ -140,6 +147,8 @@ void heavy_check_checks(FILE *fp, struct platform *p, const char *func)
 void heavy_write_checks(FILE *fp, struct platform *p, const char *func)
 {
     int i;
+
+    fprintf(fp, "function: %s\n", func);
     
     if (rreg(p->vcpu, HV_X86_RIP) == BUG_ADDR) {
         fprintf(fp, "memory: ");
@@ -241,27 +250,27 @@ void write_checks(struct platform *p, uint8_t *buf, size_t sz, const char *func,
     fprintf(cfile, "\n");
 }
 
-#define RR_IN(x) do {                                                   \
-        if (rr_mode == RR_MODE_REPLAY) {                                \
-            if (do_checks)                                              \
-                check_checks(p, (uint8_t *)(&(x)), sizeof(x), __FUNCTION__, __LINE__); \
-            read(rr_fd, &(x), sizeof(x));                               \
-        }                                                               \
-        if (rr_mode == RR_MODE_RECORD)                                  \
-            if (do_checks)                                               \
-                write_checks(p, (uint8_t *)(&(x)), sizeof(x), __FUNCTION__, __LINE__); \
-    } while (0)
+void rr(struct platform *p, uint8_t *x, size_t sz, int l, 
+        const char *func, int line)
+{
+    if (l == RR_LOC_IN) {
+        if (rr_mode == RR_MODE_REPLAY) {
+            if (0 && do_checks)
+                check_checks(p, x, sz, func, line);
+            read(rr_fd, x, sz);
+        }
+        if (rr_mode == RR_MODE_RECORD)
+            if (0 && do_checks)
+                write_checks(p, x, sz, func, line);
+    }
+    if (l == RR_LOC_OUT) {
+        if (rr_mode == RR_MODE_RECORD)
+            write(rr_fd, x, sz);
+    }
+}
 
-#define RR_OUT(x) do {                                                 \
-        if (rr_mode == RR_MODE_RECORD)                                 \
-            write(rr_fd, &(x), sizeof(x));                             \
-    } while (0)
-
-#define RR(l,x) do {                                                \
-        if (l == RR_LOC_IN)                                         \
-            RR_IN(x);                                               \
-        if (l == RR_LOC_OUT)                                        \
-            RR_OUT(x);                                              \
+#define RR(l, x, s) do {                                        \
+        rr(p, (uint8_t *)(x), s, l, __FUNCTION__, __LINE__);    \
     } while (0)
 
 #define CHECK(l, x, s) do {                                            \
@@ -341,9 +350,10 @@ void rr_ukvm_boot_info(struct platform *p, struct ukvm_boot_info *o, int loc)
 {
     HEAVY_CHECKS_IN();
     
-    RR(loc, o->mem_size);
-    RR(loc, o->kernel_end);
-    RR(loc, o->cmdline);
+    RR(loc, &o->mem_size, sizeof(o->mem_size));
+    RR(loc, &o->kernel_end, sizeof(o->kernel_end));
+    RR(loc, &o->cmdline_len, sizeof(o->cmdline_len));
+    RR(loc, p->mem + o->cmdline, o->cmdline_len);
 
     HEAVY_CHECKS_OUT();
 }
@@ -351,9 +361,9 @@ void rr_ukvm_blkinfo(struct platform *p, struct ukvm_blkinfo *o, int loc)
 {
     HEAVY_CHECKS_IN();
     
-	RR(loc, o->sector_size);
-    RR(loc, o->num_sectors);
-    RR(loc, o->rw);
+	RR(loc, &o->sector_size, sizeof(o->sector_size));
+    RR(loc, &o->num_sectors, sizeof(o->num_sectors));
+    RR(loc, &o->rw, sizeof(o->rw));
 
     HEAVY_CHECKS_OUT();
 }
@@ -365,7 +375,7 @@ void rr_ukvm_blkwrite(struct platform *p, struct ukvm_blkwrite *o, int loc)
     CHECK(loc, &o->data, sizeof(o->data));
     CHECK(loc, p->mem + o->data, o->len);
     CHECK(loc, &o->len, sizeof(o->len));
-    RR(loc, o->ret);
+    RR(loc, &o->ret, sizeof(o->ret));
 
     HEAVY_CHECKS_OUT();
 }
@@ -376,8 +386,8 @@ void rr_ukvm_blkread(struct platform *p, struct ukvm_blkread *o, int loc)
     CHECK(loc, &o->sector, sizeof(o->sector));
     CHECK(loc, &o->data, sizeof(o->data));
     CHECK(loc, p->mem + o->data, o->len);
-	RR(loc, o->len);
-	RR(loc, o->ret);
+	RR(loc, &o->len, sizeof(o->len));
+	RR(loc, &o->ret, sizeof(o->ret));
 
     HEAVY_CHECKS_OUT();
 }
@@ -385,7 +395,7 @@ void rr_ukvm_netinfo(struct platform *p, struct ukvm_netinfo *o, int loc)
 {
     HEAVY_CHECKS_IN();
     
-    RR(loc, o->mac_str);
+    RR(loc, &o->mac_str, sizeof(o->mac_str));
 
     HEAVY_CHECKS_OUT();
 }
@@ -396,7 +406,7 @@ void rr_ukvm_netwrite(struct platform *p, struct ukvm_netwrite *o, int loc)
     CHECK(loc, &o->data, sizeof(o->data));
     CHECK(loc, p->mem + o->data, o->len);
     CHECK(loc, &o->len, sizeof(o->len));
-	RR(loc, o->ret);
+	RR(loc, &o->ret, sizeof(o->ret));
 
     HEAVY_CHECKS_OUT();
 }
@@ -405,9 +415,9 @@ void rr_ukvm_netread(struct platform *p, struct ukvm_netread *o, int loc)
     HEAVY_CHECKS_IN();
     
     CHECK(loc, &o->data, sizeof(o->data));
-    CHECK(loc, p->mem + o->data, o->len);
-	RR(loc, o->len);
-	RR(loc, o->ret);
+	RR(loc, &o->len, sizeof(o->len));
+    RR(loc, p->mem + o->data, o->len);
+	RR(loc, &o->ret, sizeof(o->ret));
 
     HEAVY_CHECKS_OUT();
 }
@@ -416,7 +426,7 @@ void rr_ukvm_poll(struct platform *p, struct ukvm_poll *o, int loc)
     HEAVY_CHECKS_IN();
     
     CHECK(loc, &o->timeout_nsecs, sizeof(o->timeout_nsecs));
-    RR(loc, o->ret);
+    RR(loc, &o->ret, sizeof(o->ret));
 
     HEAVY_CHECKS_OUT();
 }
@@ -424,8 +434,8 @@ void rr_ukvm_time_init(struct platform *p, struct ukvm_time_init *o, int loc)
 {
     HEAVY_CHECKS_IN();
     
-	RR(loc, o->freq);
-    RR(loc, o->rtc_boot);
+	RR(loc, &o->freq, sizeof(o->freq));
+    RR(loc, &o->rtc_boot, sizeof(o->rtc_boot));
 
     HEAVY_CHECKS_OUT();
 }
@@ -434,10 +444,10 @@ void rr_ukvm_cpuid(struct platform *p, struct ukvm_cpuid *o, int loc)
     HEAVY_CHECKS_IN();
     
 	CHECK(loc, &o->code, sizeof(o->code));
-    RR(loc, o->eax);
-    RR(loc, o->ebx);
-    RR(loc, o->ecx);
-    RR(loc, o->edx);
+    RR(loc, &o->eax, sizeof(o->eax));
+    RR(loc, &o->ebx, sizeof(o->ebx));
+    RR(loc, &o->ecx, sizeof(o->ecx));
+    RR(loc, &o->edx, sizeof(o->edx));
 
     HEAVY_CHECKS_OUT();
 }
@@ -445,7 +455,7 @@ void rr_ukvm_rdtsc(struct platform *p, uint64_t *new_tsc, int loc)
 {
     HEAVY_CHECKS_IN();
     
-    RR(loc, *new_tsc);
+    RR(loc, &*new_tsc, sizeof(*new_tsc));
 
     HEAVY_CHECKS_OUT();
 }
@@ -453,7 +463,7 @@ void rr_ukvm_rdrand(struct platform *p, uint64_t *r, int loc)
 {
     HEAVY_CHECKS_IN();
     
-    RR(loc, *r);
+    RR(loc, &*r, sizeof(*r));
 
     HEAVY_CHECKS_OUT();
 }

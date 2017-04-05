@@ -25,6 +25,7 @@ struct ukvm_boot_info {
     uint64_t mem_size;		/* Memory size in bytes */
     uint64_t kernel_end;	/* Address of end of kernel */
     uint64_t cmdline;		/* Address of command line (C string) */
+    uint64_t cmdline_len;
 };
 
 /* On x86, I/O ports are used for hypercalls to ukvm. */

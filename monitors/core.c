@@ -113,7 +113,8 @@ static void setup_boot_info(struct platform *p,
         cmdline_free -= alen;
         cmdline_p += alen;
     }
-
+    bi->cmdline_len = (uint64_t)cmdline_p - bi->cmdline - (uint64_t)p->mem;
+        
     RR_OUTPUT(p, boot_info, bi);
 }
 

@@ -308,7 +308,7 @@ static void ping_serve(int verbose, int limit)
             puts("Write error\n");
 
         received++;
-        if (limit && received == 100000) {
+        if (limit && received == 100) {
             puts("Limit reached, exiting\n");
             break;
         }
