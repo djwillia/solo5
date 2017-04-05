@@ -24,7 +24,9 @@
 #include <inttypes.h>
 #include <err.h>
 
-#define GUEST_SIZE      0x20000000 /* 512 MBs */
+//#define GUEST_SIZE      0x20000000 /* 512 MBs */
+//#define GUEST_SIZE      0x2000000 /* 32 MBs */
+#define GUEST_SIZE      0x200000 /* 2 MBs */
 #define GUEST_PAGE_SIZE 0x200000   /* 2 MB pages in guest */
 
 #if defined(__GNUC__)

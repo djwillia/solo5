@@ -21,6 +21,7 @@
 #include "../ukvm-private.h"
 #include "../ukvm-modules.h"
 #include "../ukvm.h"
+#include "../ukvm-rr.h"
 
 static char *netiface;
 static int netfd;
@@ -204,37 +205,47 @@ static size_t vmn_write(uint8_t *data, int len)
     return iov.iov_len;
 }
 
-static void ukvm_port_netinfo(uint8_t *mem, uint64_t paddr)
+static void ukvm_port_netinfo(struct platform *p, uint64_t paddr)
 {
     GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_netinfo));
-    struct ukvm_netinfo *info = (struct ukvm_netinfo *)(mem + paddr);
+    struct ukvm_netinfo *info = (struct ukvm_netinfo *)(p->mem + paddr);
 
+    RR_INPUT(p, netinfo, info);
+    
     printf("netinfo!\n");
     memcpy(info->mac_str, netinfo.mac_str, sizeof(netinfo.mac_str));
+
+    RR_OUTPUT(p, netinfo, info);
 }
 
-static void ukvm_port_netwrite(uint8_t *mem, uint64_t paddr)
+static void ukvm_port_netwrite(struct platform *p, uint64_t paddr)
 {
     GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_netwrite));
-    struct ukvm_netwrite *wr = (struct ukvm_netwrite *)(mem + paddr);
+    struct ukvm_netwrite *wr = (struct ukvm_netwrite *)(p->mem + paddr);
     int ret;
-
     GUEST_CHECK_PADDR(wr->data, GUEST_SIZE, wr->len);
-    ret = vmn_write(mem + wr->data, wr->len);
+
+    RR_INPUT(p, netwrite, wr);
+    
+    ret = vmn_write(p->mem + wr->data, wr->len);
     if (wr->len != ret)
         printf("wr->len=%zu ret=%d\n", wr->len, ret);
     assert(wr->len == ret);
     wr->ret = 0;
+
+    RR_OUTPUT(p, netwrite, wr);
 }
 
-static void ukvm_port_netread(uint8_t *mem, uint64_t paddr)
+static void ukvm_port_netread(struct platform *p, uint64_t paddr)
 {
     GUEST_CHECK_PADDR(paddr, GUEST_SIZE, sizeof (struct ukvm_netread));
-    struct ukvm_netread *rd = (struct ukvm_netread *)(mem + paddr);
+    struct ukvm_netread *rd = (struct ukvm_netread *)(p->mem + paddr);
     int ret = 0;
-
     GUEST_CHECK_PADDR(rd->data, GUEST_SIZE, rd->len);
-    ret = vmn_read(mem + rd->data, rd->len);
+
+    RR_INPUT(p, netread, rd);
+
+    ret = vmn_read(p->mem + rd->data, rd->len);
     if (ret < 0) {
         rd->ret = -1;
         return;
@@ -242,8 +253,11 @@ static void ukvm_port_netread(uint8_t *mem, uint64_t paddr)
 
     rd->len = ret;
     rd->ret = 0;
+
+    RR_OUTPUT(p, netread, rd);
 }
 
+/* XXX seems like this should move to platform independent */
 static int handle_exit(struct platform *p)
 {
     if (platform_get_exit_reason(p) != EXIT_IO)
@@ -254,13 +268,13 @@ static int handle_exit(struct platform *p)
 
     switch (port) {
     case UKVM_PORT_NETINFO:
-        ukvm_port_netinfo(p->mem, data);
+        ukvm_port_netinfo(p, data);
         break;
     case UKVM_PORT_NETWRITE:
-        ukvm_port_netwrite(p->mem, data);
+        ukvm_port_netwrite(p, data);
         break;
     case UKVM_PORT_NETREAD:
-        ukvm_port_netread(p->mem, data);
+        ukvm_port_netread(p, data);
         break;
     default:
         return -1;

@@ -63,11 +63,11 @@ uint64_t ukvmclock_monotonic(void) {
  */
 int ukvmclock_init(void) {
     uint64_t tsc_freq, rtc_boot;
-    struct ukvm_time_init t;
+    volatile struct ukvm_time_init t;
 
     outl(UKVM_PORT_TIME_INIT, ukvm_ptr(&t));
     cpu_cc_barrier();
-
+        
     /*
      * Read RTC "time at boot". This must be done just before tsc_base is
      * initialised in order to get a correct offset below.

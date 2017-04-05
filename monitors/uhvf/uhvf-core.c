@@ -303,6 +303,9 @@ void platform_setup_system(struct platform *p, uint64_t entry,
     wvmcs(p->vcpu, VMCS_GUEST_RSP, GUEST_SIZE - 8);
     wreg(p->vcpu, HV_X86_RDI, boot_info);
 
+    wreg(p->vcpu, HV_X86_DR0, 0x0);
+    wreg(p->vcpu, HV_X86_DR6, 0xffff0ff0);
+    
     /* trap everything for cr0 and cr4 */
     wvmcs(p->vcpu, VMCS_CTRL_CR0_MASK, 0xffffffff);
     wvmcs(p->vcpu, VMCS_CTRL_CR4_MASK, 0xffffffff);

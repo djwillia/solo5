@@ -23,7 +23,8 @@
 
 void time_init(void)
 {
-    assert(ukvmclock_init() == 0);
+    int ret = ukvmclock_init();
+    assert(ret == 0);
 }
 
 uint64_t solo5_clock_monotonic(void)

@@ -130,7 +130,7 @@ struct ukvm_netwrite {
 
 /* UKVM_PORT_NETREAD */
 struct ukvm_netread {
-	/* IN */
+	/* OUT */
 	UKVM_GUEST_PTR(void *) data;
 
 	/* IN/OUT */
@@ -160,6 +160,18 @@ struct ukvm_time_init {
 	/* OUT */
 	uint64_t freq;
     uint64_t rtc_boot;
+};
+
+
+struct ukvm_cpuid {
+    /* IN */
+    uint64_t code;
+
+    /* OUT */
+    uint32_t eax;
+    uint32_t ebx;
+    uint32_t ecx;
+    uint32_t edx; 
 };
 
 #endif

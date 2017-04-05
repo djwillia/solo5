@@ -54,31 +54,6 @@ struct ukvm_module *modules[] = {
 };
 #define NUM_MODULES ((sizeof(modules) / sizeof(struct ukvm_module *)) - 1)
 
-//#define RR_MODE RR_MODE_RECORD
-#define RR_MODE RR_MODE_REPLAY
-
-/* RR_INPUT or RR_INPUT_REDO
- *    (struct name, pointer to struct, offset for any data ptrs) 
- *    Redo re-performs the function (e.g., for console out) 
- */
-//            printf("replaying for %s\n", #s);       
-
-#define _RR_INPUT(p,s,o,r) do {                      \
-        rr_ukvm_##s(p, o, RR_LOC_IN);                \
-        if (rr_mode == RR_MODE_REPLAY)               \
-            if(r) goto rr_output_##s;                \
-    } while (0)
-
-#define RR_INPUT_REDO(p,s,o) _RR_INPUT(p,s,o,0)
-#define RR_INPUT(p,s,o) _RR_INPUT(p,s,o,1)
-          
-#define RR_OUTPUT(p,s,o) do {                   \
-    rr_output_##s:                              \
-        rr_ukvm_##s(p, o, RR_LOC_OUT);          \
-    } while (0)
-
-
-
 /*
  * Memory map:
  *
@@ -232,7 +207,7 @@ static void ukvm_port_time_init(struct platform *p, uint64_t paddr)
     int ret;
 
     RR_INPUT(p, time_init, o);
-    
+
     o->freq = tsc_freq;
     ret = gettimeofday(&tv, NULL);
     assert(ret == 0);
@@ -361,6 +336,7 @@ static int vcpu_loop(struct platform *p)
             double tsc_f;
             int dbg_sanity_check_rdtsc = 0;
 
+            assert(new_tsc == 0);
             RR_INPUT(p, rdtsc, &new_tsc);
             
             dbg_rdtsc_cnt++;
@@ -399,11 +375,13 @@ static int vcpu_loop(struct platform *p)
         }
 
         case EXIT_CPUID: {
-            uint32_t eax, ebx, ecx, edx;
-            uint64_t code = platform_get_reg(p, RAX);
+            struct ukvm_cpuid cpuid;
+            cpuid.code = platform_get_reg(p, RAX);
+            cpuid.eax = cpuid.ebx = cpuid.ecx = cpuid.edx = 0;
 
-            eax = ebx = ecx = edx = 0;
-            switch (code) {
+            RR_INPUT(p, cpuid, &cpuid);
+            
+            switch (cpuid.code) {
             case 0: /* genuine intel */
             case 1: /* family/model, etc. */
                 break;
@@ -414,17 +392,18 @@ static int vcpu_loop(struct platform *p)
                 break;
             }
     
-            printf("cpuid with code 0x%llx\n", code);
             __asm__ volatile("cpuid"
-                             :"=a"(eax),"=b"(ebx),"=c"(ecx),"=d"(edx)
-                             :"a"((uint32_t)code));
+                             :"=a"(cpuid.eax),"=b"(cpuid.ebx),
+                              "=c"(cpuid.ecx),"=d"(cpuid.edx)
+                             :"a"((uint32_t)cpuid.code));
             
-            printf("cpuid results are 0x%x 0x%x 0x%x 0x%x\n", eax, ebx, ecx, edx);
-            platform_set_reg(p, RAX, (uint64_t)eax & 0xffffffff);
-            platform_set_reg(p, RBX, (uint64_t)ebx & 0xffffffff);
-            platform_set_reg(p, RCX, (uint64_t)ecx & 0xffffffff);
-            platform_set_reg(p, RDX, (uint64_t)edx & 0xffffffff);
-
+            RR_OUTPUT(p, cpuid, &cpuid);
+            
+            platform_set_reg(p, RAX, (uint64_t)cpuid.eax & 0xffffffff);
+            platform_set_reg(p, RBX, (uint64_t)cpuid.ebx & 0xffffffff);
+            platform_set_reg(p, RCX, (uint64_t)cpuid.ecx & 0xffffffff);
+            platform_set_reg(p, RDX, (uint64_t)cpuid.edx & 0xffffffff);
+            
             platform_advance_rip(p);
             break;
         }
@@ -503,7 +482,8 @@ int main(int argc, char **argv)
     struct sigaction sa;
     int matched;
     int rc;
-
+    int rr_mode = RR_MODE_RECORD;
+    
     prog = basename(*argv);
     argc--;
     argv++;
@@ -531,6 +511,22 @@ int main(int argc, char **argv)
                 break;
             }
         }
+        if (strcmp("--record", *argv) == 0) {
+            rr_mode = RR_MODE_RECORD;
+            matched = 1;
+            argc--;
+            argv++;
+            break;
+        }
+
+        if (strcmp("--replay", *argv) == 0) {
+            rr_mode = RR_MODE_REPLAY;
+            matched = 1;
+            argc--;
+            argv++;
+            break;
+        }
+
         if (!matched) {
             warnx("Invalid option: `%s'", *argv);
             usage(prog);
@@ -546,7 +542,7 @@ int main(int argc, char **argv)
     argc--;
     argv++;
 
-    rr_init(RR_MODE, "rr_output.dat", "rr_check.dat");
+    rr_init(rr_mode, "rr_output.dat", "rr_check.log", "rr_progress.log");
     
     memset(&sa, 0, sizeof (struct sigaction));
     sa.sa_handler = sig_handler;
