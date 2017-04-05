@@ -8,56 +8,231 @@
 #include <assert.h>
 #include <string.h>
 #include <err.h>
+#include <zlib.h>
 
 #include "ukvm.h"
+#include "ukvm-private.h"
 #include "unikernel-monitor.h"
 #include "ukvm-rr.h"
 int rr_mode;
 
-#define CHK_BUF_SZ 256
+#define CHK_BUF_SZ 4096
 static uint8_t check_buf[CHK_BUF_SZ];
 
 static int rr_fd;
-static int check_fd; /* set to 0 to disable checks */
-#if 0
-static void rr_64(int l, uint64_t *x) {
-    if (l == RR_LOC_IN) {
-        if (rr_mode == RR_MODE_REPLAY) {
-            if (check_fd) {
-                int ret;
-                assert(sizeof(*x) < CHK_BUF_SZ);
-                ret = read(check_fd, check_buf, sizeof(*x));
-                assert(ret == sizeof(*x));
-                printf("checking for 0x%p: 0x%llx == 0x%llx\n", x, *((uint64_t *)check_buf), *x);
-                assert(memcmp(check_buf, x, sizeof(*x)) == 0);
-            }
-            read(rr_fd, x, sizeof(*x));
-            printf("replaying for 0x%p: 0x%llx\n", x, *x);
-        }
-        if (rr_mode == RR_MODE_RECORD) {
-            printf("should check for 0x%p: 0x%llx\n", x, *x);
-            if (check_fd) write(check_fd, x, sizeof(*x));
-        }
-    }
-    if (l == RR_LOC_OUT) {
-        if (rr_mode == RR_MODE_RECORD) {
-            write(rr_fd, x, sizeof(*x));
-            printf("recording for 0x%p: 0x%llx\n", x, *x);
-        }
-    }
+static int do_checks = 1;
+FILE *cfile;
+FILE *pfile;
+
+uint64_t rreg(hv_vcpuid_t vcpu, hv_x86_reg_t reg);
+#include <Hypervisor/hv_arch_x86.h>
+
+#define REGISTER_CHECK_WRITE(r) do {                     \
+        fprintf(cfile, #r" 0x%llx\n", rreg(p->vcpu, r));    \
+    } while (0)
+
+#define REGISTER_CHECK_CHECK(r) do {                    \
+        uint64_t cval;                                  \
+        uint64_t rval;                                  \
+        fscanf(cfile, #r" 0x%llx\n", &cval);            \
+        rval = rreg(p->vcpu, r);                        \
+        fprintf(pfile, #r" 0x%llx\n", rval);                        \
+        if (rval != cval) {                                         \
+            printf("on %s %d ", func, line);                        \
+            printf(#r" got 0x%llx expected 0x%llx\n", rval, cval);  \
+        }                                                           \
+        assert(rval == cval);                                       \
+    } while (0)
+
+uint32_t do_crc32(uint8_t *mem, size_t sz) {
+    uint32_t crc = crc32(0, Z_NULL, 0);
+    int i;
+    for (i = 0; i < sz; i++)
+        crc = crc32(crc, mem + i, 1);
+    return crc;
 }
-#endif
-#define RR_IN(x) do {                                                  \
-        if (rr_mode == RR_MODE_REPLAY) {                               \
-            if (check_fd) {                                            \
-                assert(sizeof(x) < CHK_BUF_SZ);                        \
-                read(check_fd, check_buf, sizeof(x));                  \
-                assert(memcmp(check_buf, &(x), sizeof(x)) == 0);       \
-            }                                                          \
-            read(rr_fd, &(x), sizeof(x));                              \
-        }                                                              \
-        if (rr_mode == RR_MODE_RECORD)                                 \
-            if (check_fd) write(check_fd, &(x), sizeof(x));            \
+
+void check_checks(struct platform *p, uint8_t *buf, size_t sz, const char *func, int line) {
+    size_t c_sz;
+    int c_line;
+    int i;
+
+    REGISTER_CHECK_CHECK(HV_X86_RIP);
+	REGISTER_CHECK_CHECK(HV_X86_RFLAGS);
+	REGISTER_CHECK_CHECK(HV_X86_RAX);
+	REGISTER_CHECK_CHECK(HV_X86_RCX);
+	REGISTER_CHECK_CHECK(HV_X86_RDX);
+	REGISTER_CHECK_CHECK(HV_X86_RBX);
+	REGISTER_CHECK_CHECK(HV_X86_RSI);
+	REGISTER_CHECK_CHECK(HV_X86_RDI);
+	REGISTER_CHECK_CHECK(HV_X86_RSP);
+	REGISTER_CHECK_CHECK(HV_X86_RBP);
+	REGISTER_CHECK_CHECK(HV_X86_R8);
+	REGISTER_CHECK_CHECK(HV_X86_R9);
+	REGISTER_CHECK_CHECK(HV_X86_R10);
+	REGISTER_CHECK_CHECK(HV_X86_R11);
+	REGISTER_CHECK_CHECK(HV_X86_R12);
+	REGISTER_CHECK_CHECK(HV_X86_R13);
+	REGISTER_CHECK_CHECK(HV_X86_R14);
+	REGISTER_CHECK_CHECK(HV_X86_R15);
+	REGISTER_CHECK_CHECK(HV_X86_CS);
+	REGISTER_CHECK_CHECK(HV_X86_SS);
+	REGISTER_CHECK_CHECK(HV_X86_DS);
+	REGISTER_CHECK_CHECK(HV_X86_ES);
+	REGISTER_CHECK_CHECK(HV_X86_FS);
+	REGISTER_CHECK_CHECK(HV_X86_GS);
+	REGISTER_CHECK_CHECK(HV_X86_IDT_BASE);
+	REGISTER_CHECK_CHECK(HV_X86_IDT_LIMIT);
+	REGISTER_CHECK_CHECK(HV_X86_GDT_BASE);
+	REGISTER_CHECK_CHECK(HV_X86_GDT_LIMIT);
+	REGISTER_CHECK_CHECK(HV_X86_LDTR);
+	REGISTER_CHECK_CHECK(HV_X86_LDT_BASE);
+	REGISTER_CHECK_CHECK(HV_X86_LDT_LIMIT);
+	REGISTER_CHECK_CHECK(HV_X86_LDT_AR);
+	REGISTER_CHECK_CHECK(HV_X86_TR);
+	REGISTER_CHECK_CHECK(HV_X86_TSS_BASE);
+	REGISTER_CHECK_CHECK(HV_X86_TSS_LIMIT);
+	REGISTER_CHECK_CHECK(HV_X86_TSS_AR);
+	REGISTER_CHECK_CHECK(HV_X86_CR0);
+	REGISTER_CHECK_CHECK(HV_X86_CR1);
+	REGISTER_CHECK_CHECK(HV_X86_CR2);
+	REGISTER_CHECK_CHECK(HV_X86_CR3);
+	REGISTER_CHECK_CHECK(HV_X86_CR4);
+	REGISTER_CHECK_CHECK(HV_X86_DR0);
+	REGISTER_CHECK_CHECK(HV_X86_DR1);
+	REGISTER_CHECK_CHECK(HV_X86_DR2);
+	REGISTER_CHECK_CHECK(HV_X86_DR3);
+	REGISTER_CHECK_CHECK(HV_X86_DR4);
+	REGISTER_CHECK_CHECK(HV_X86_DR5);
+	REGISTER_CHECK_CHECK(HV_X86_DR6);
+	REGISTER_CHECK_CHECK(HV_X86_DR7);
+	REGISTER_CHECK_CHECK(HV_X86_TPR);
+	REGISTER_CHECK_CHECK(HV_X86_XCR0);
+
+
+    if (rreg(p->vcpu, HV_X86_RIP) == 0x100c1e) {
+        fscanf(cfile, "memory: ");
+        for (i = 0; i < GUEST_SIZE; i++) {
+            uint32_t val;
+            fscanf(cfile, "%02x", &val);
+            if (p->mem[i] != val)
+                printf("%08x %02x -> %02x\n", i, val, p->mem[i]);
+        }
+        fscanf(cfile, "\n");
+    }
+
+    uint32_t ccrc;
+    fscanf(cfile, "crc: 0x%x\n", &ccrc);
+    uint32_t crc = do_crc32(p->mem, GUEST_SIZE);
+    fprintf(pfile, "crc: 0x%x\n", crc);
+    if (crc != ccrc)
+        printf("crc diff on %s %d rip is 0x%llx\n", func, line, rreg(p->vcpu, HV_X86_RIP));
+    assert(crc == ccrc);
+    
+
+    {
+        fprintf(pfile, "%zu %s %d ", sz, func, line);
+        for (i = 0; i < sz; i++)
+            fprintf(pfile, "%02x", buf[i]);
+        fprintf(pfile, "\n");
+    }
+    memset(check_buf, 0, CHK_BUF_SZ);
+    fscanf(cfile, "%zu %s %d ", &c_sz, check_buf, &c_line);
+    if ((c_line != line) || memcmp(check_buf, func, strlen(func))) {
+        printf("out of order execution detected!!!!\n");
+        printf("got %s:%d, expected %s:%d\n", func, line, check_buf, c_line);
+    }
+    assert(c_sz == sz);
+    assert(c_line == line);
+    assert(memcmp(check_buf, func, strlen(func)) == 0);
+    for (i = 0; i < sz; i++) {
+        uint32_t c;
+        fscanf(cfile, "%02x", &c);
+        assert(c == buf[i]);
+    }
+    fscanf(cfile, "\n");
+}
+
+void write_checks(struct platform *p, uint8_t *buf, size_t sz, const char *func, int line) {
+    int i;
+
+    REGISTER_CHECK_WRITE(HV_X86_RIP);
+	REGISTER_CHECK_WRITE(HV_X86_RFLAGS);
+	REGISTER_CHECK_WRITE(HV_X86_RAX);
+	REGISTER_CHECK_WRITE(HV_X86_RCX);
+	REGISTER_CHECK_WRITE(HV_X86_RDX);
+	REGISTER_CHECK_WRITE(HV_X86_RBX);
+	REGISTER_CHECK_WRITE(HV_X86_RSI);
+	REGISTER_CHECK_WRITE(HV_X86_RDI);
+	REGISTER_CHECK_WRITE(HV_X86_RSP);
+	REGISTER_CHECK_WRITE(HV_X86_RBP);
+	REGISTER_CHECK_WRITE(HV_X86_R8);
+	REGISTER_CHECK_WRITE(HV_X86_R9);
+	REGISTER_CHECK_WRITE(HV_X86_R10);
+	REGISTER_CHECK_WRITE(HV_X86_R11);
+	REGISTER_CHECK_WRITE(HV_X86_R12);
+	REGISTER_CHECK_WRITE(HV_X86_R13);
+	REGISTER_CHECK_WRITE(HV_X86_R14);
+	REGISTER_CHECK_WRITE(HV_X86_R15);
+	REGISTER_CHECK_WRITE(HV_X86_CS);
+	REGISTER_CHECK_WRITE(HV_X86_SS);
+	REGISTER_CHECK_WRITE(HV_X86_DS);
+	REGISTER_CHECK_WRITE(HV_X86_ES);
+	REGISTER_CHECK_WRITE(HV_X86_FS);
+	REGISTER_CHECK_WRITE(HV_X86_GS);
+	REGISTER_CHECK_WRITE(HV_X86_IDT_BASE);
+	REGISTER_CHECK_WRITE(HV_X86_IDT_LIMIT);
+	REGISTER_CHECK_WRITE(HV_X86_GDT_BASE);
+	REGISTER_CHECK_WRITE(HV_X86_GDT_LIMIT);
+	REGISTER_CHECK_WRITE(HV_X86_LDTR);
+	REGISTER_CHECK_WRITE(HV_X86_LDT_BASE);
+	REGISTER_CHECK_WRITE(HV_X86_LDT_LIMIT);
+	REGISTER_CHECK_WRITE(HV_X86_LDT_AR);
+	REGISTER_CHECK_WRITE(HV_X86_TR);
+	REGISTER_CHECK_WRITE(HV_X86_TSS_BASE);
+	REGISTER_CHECK_WRITE(HV_X86_TSS_LIMIT);
+	REGISTER_CHECK_WRITE(HV_X86_TSS_AR);
+	REGISTER_CHECK_WRITE(HV_X86_CR0);
+	REGISTER_CHECK_WRITE(HV_X86_CR1);
+	REGISTER_CHECK_WRITE(HV_X86_CR2);
+	REGISTER_CHECK_WRITE(HV_X86_CR3);
+	REGISTER_CHECK_WRITE(HV_X86_CR4);
+	REGISTER_CHECK_WRITE(HV_X86_DR0);
+	REGISTER_CHECK_WRITE(HV_X86_DR1);
+	REGISTER_CHECK_WRITE(HV_X86_DR2);
+	REGISTER_CHECK_WRITE(HV_X86_DR3);
+	REGISTER_CHECK_WRITE(HV_X86_DR4);
+	REGISTER_CHECK_WRITE(HV_X86_DR5);
+	REGISTER_CHECK_WRITE(HV_X86_DR6);
+	REGISTER_CHECK_WRITE(HV_X86_DR7);
+	REGISTER_CHECK_WRITE(HV_X86_TPR);
+	REGISTER_CHECK_WRITE(HV_X86_XCR0);
+    
+    if (rreg(p->vcpu, HV_X86_RIP) == 0x100c1e) {
+        fprintf(cfile, "memory: ");
+        for (i = 0; i < GUEST_SIZE; i++)
+            fprintf(cfile, "%02x", p->mem[i]);
+        fprintf(cfile, "\n");
+    }
+
+    uint32_t crc = do_crc32(p->mem, GUEST_SIZE);
+    fprintf(cfile, "crc: 0x%x\n", crc);
+    
+    fprintf(cfile, "%zu %s %d ", sz, func, line);
+    for (i = 0; i < sz; i++)
+        fprintf(cfile, "%02x", buf[i]);
+    fprintf(cfile, "\n");
+}
+
+#define RR_IN(x) do {                                                   \
+        if (rr_mode == RR_MODE_REPLAY) {                                \
+            if (do_checks)                                              \
+                check_checks(p, (uint8_t *)(&(x)), sizeof(x), __FUNCTION__, __LINE__); \
+            read(rr_fd, &(x), sizeof(x));                               \
+        }                                                               \
+        if (rr_mode == RR_MODE_RECORD)                                  \
+            if (do_checks)                                               \
+                write_checks(p, (uint8_t *)(&(x)), sizeof(x), __FUNCTION__, __LINE__); \
     } while (0)
 
 #define RR_OUT(x) do {                                                 \
@@ -72,41 +247,45 @@ static void rr_64(int l, uint64_t *x) {
             RR_OUT(x);                                              \
     } while (0)
 
+#if 0          
 #define CHECK(l, x, s) do {                                            \
-        if (l == RR_LOC_IN) {                                          \
-            if (rr_mode == RR_MODE_REPLAY) {                           \
-                if (check_fd) {                                        \
-                    assert(s < CHK_BUF_SZ);                            \
-                    read(check_fd, check_buf, s);                      \
-                    assert(memcmp(check_buf, x, s) == 0);              \
-                }                                                      \
-            }                                                          \
-            if (rr_mode == RR_MODE_RECORD)                             \
-                if (check_fd) write(check_fd, x, s);                   \
-        }                                                              \
+        if (l == RR_LOC_IN) {                                           \
+            if (rr_mode == RR_MODE_REPLAY) {                            \
+                if (do_checks)                                          \
+                    check_checks(p, (uint8_t *)(x), s, __FUNCTION__, __LINE__); \
+            }                                                           \
+            if (rr_mode == RR_MODE_RECORD)                              \
+                if (do_checks)                                          \
+                    write_checks(p, (uint8_t *)(x), s, __FUNCTION__, __LINE__); \
+        }                                                               \
     } while (0)
-
-int rr_init(int m, char *rr_file, char *check_file)
+#endif
+#define CHECK(l, x, s) do { } while (0)
+              
+int rr_init(int m, char *rr_file, char *check_file, char *progress_file)
 {
     rr_mode = m;
     switch (rr_mode) {
     case RR_MODE_RECORD:
         rr_fd = open(rr_file, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
-        if (check_file)
-            check_fd = open(check_file,
-                            O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
+        if (check_file) 
+            cfile = fopen(check_file, "w");
         break;
     case RR_MODE_REPLAY:
         rr_fd = open(rr_file, O_RDONLY);
-        if (check_file)
-            check_fd = open(check_file, O_RDONLY);
-        break;
+        if (check_file) {
+            cfile = fopen(check_file, "r");
+            pfile = fopen(progress_file, "w");
+            if (!pfile)
+                errx(1, "couldn't open progress file %s\n", progress_file);
+            break;
+        }
     default:
         return -1;
     }
     if (rr_fd <= 0)
         errx(1, "couldn't open rr file %s\n", rr_file);
-    if (check_file && (check_fd <= 0))
+    if (check_file && !cfile)
         errx(1, "couldn't open check file %s\n", check_file);
     return 0;
 }
@@ -174,7 +353,14 @@ void rr_ukvm_time_init(struct platform *p, struct ukvm_time_init *o, int loc)
 	RR(loc, o->freq);
     RR(loc, o->rtc_boot);
 }
-
+void rr_ukvm_cpuid(struct platform *p, struct ukvm_cpuid *o, int loc)
+{
+	CHECK(loc, &o->code, sizeof(o->code));
+    RR(loc, o->eax);
+    RR(loc, o->ebx);
+    RR(loc, o->ecx);
+    RR(loc, o->edx);
+}
 void rr_ukvm_rdtsc(struct platform *p, uint64_t *new_tsc, int loc)
 {
     RR(loc, *new_tsc);
