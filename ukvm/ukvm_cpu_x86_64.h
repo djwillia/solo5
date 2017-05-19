@@ -89,6 +89,19 @@
 
 #define X86_EFER_INIT           (X86_EFER_LME | X86_EFER_LMA)
 
+/* AMD64 MSR's */
+#define	MSR_EFER	0xc0000080	/* extended features */
+#define	MSR_STAR	0xc0000081	/* legacy mode SYSCALL target/cs/ss */
+#define	MSR_LSTAR	0xc0000082	/* long mode SYSCALL target rip */
+#define	MSR_CSTAR	0xc0000083	/* compat mode SYSCALL target rip */
+#define	MSR_SF_MASK	0xc0000084	/* syscall flags mask */
+#define	MSR_FSBASE	0xc0000100	/* base address of the %fs "segment" */
+#define	MSR_GSBASE	0xc0000101	/* base address of the %gs "segment" */
+#define	MSR_KGSBASE	0xc0000102	/* base address of the kernel %gs */
+#define	MSR_SYSENTER_CS_MSR	0x174
+#define	MSR_SYSENTER_ESP_MSR	0x175
+#define	MSR_SYSENTER_EIP_MSR	0x176
+
 /*
  * Intel long mode page directory/table entries
  */

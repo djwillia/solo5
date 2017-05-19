@@ -84,15 +84,31 @@ int ukvm_core_register_vmexit(ukvm_vmexit_fn_t fn)
     return 0;
 }
 
+
+#ifdef __APPLE__
+#include <mach/clock.h>
+#include <mach/mach.h>
+static clock_serv_t osx_clock;
+#endif
+
 static void hypercall_walltime(struct ukvm_hv *hv, ukvm_gpa_t gpa)
 {
     struct ukvm_walltime *t =
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_walltime));
+#ifndef __APPLE__
     struct timespec ts;
 
     int rc = clock_gettime(CLOCK_REALTIME, &ts);
     assert(rc == 0);
     t->nsecs = (ts.tv_sec * 1000000000ULL) + ts.tv_nsec;
+#else
+    /* OSX doesn't have clock_gettime or CLOCK_REALTIME... */
+    mach_timespec_t mts;
+    
+    int rc = clock_get_time(osx_clock, &mts);
+    assert(rc == 0);
+    t->nsecs = (mts.tv_sec * 1000000000ULL) + mts.tv_nsec;
+#endif
 }
 
 static void hypercall_puts(struct ukvm_hv *hv, ukvm_gpa_t gpa)
@@ -127,8 +143,22 @@ static void hypercall_poll(struct ukvm_hv *hv, ukvm_gpa_t gpa)
 
     ts.tv_sec = t->timeout_nsecs / 1000000000ULL;
     ts.tv_nsec = t->timeout_nsecs % 1000000000ULL;
-
+#ifndef __APPLE__
     rc = ppoll(pollfds, npollfds, &ts, &pollsigmask);
+#else /* XXX hacks for OSX */
+    /* We don't have ppoll and the network poll is using the OSX
+     * dispatch framework, not a general file descriptor.  Need to
+     * find a way to be able to poll from multiple devices, especially
+     * if there is a mix between dispatch and fds.  For now we special
+     * case the network. 
+     */
+#ifdef UKVM_MODULE_NET
+    extern int osx_net_poll(uint64_t timeout);
+    rc = osx_net_poll(t->timeout_nsecs);
+#else
+    rc = nanosleep(&ts, NULL);
+#endif
+#endif
     assert(rc >= 0);
     t->ret = rc;
 }
@@ -149,6 +179,10 @@ static int setup(struct ukvm_hv *hv)
     sigdelset(&pollsigmask, SIGTERM);
     sigdelset(&pollsigmask, SIGINT);
 
+#ifdef __APPLE__
+    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &osx_clock);
+#endif
+    
     return 0;
 }
 

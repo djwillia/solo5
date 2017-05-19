@@ -43,7 +43,9 @@ EOM
 fi
 
 UKVM_CC=${UKVM_CC:-cc}
-UKVM_SRC=$(readlink -f $1)
+# Hopefully a more portable way to get absolute path...
+UKVM_SRC=`(cd $(dirname $1)/$(basename $1) && pwd -P)`
+#UKVM_SRC=$(readlink -f $1)
 if [ ! -d ${UKVM_SRC} -o ! -f ${UKVM_SRC}/ukvm_core.c ]; then
     die "Not a ukvm source directory: ${UKVM_SRC}"
 fi
@@ -52,6 +54,11 @@ shift
 add_cflags ()
 {
     UKVM_CFLAGS="${UKVM_CFLAGS} $@"
+}
+
+add_ldflags ()
+{
+    UKVM_LDFLAGS="${UKVM_LDFLAGS} $@"
 }
 
 add_obj ()
@@ -83,7 +90,7 @@ UKVM_LDFLAGS=
 UKVM_LDLIBS=
 UKVM_HEADERS=
 UKVM_OBJS=
-add_obj ukvm_core.o ukvm_elf.o ukvm_main.o
+add_obj ukvm_core.o ukvm_main.o
 add_header ukvm.h ukvm_guest.h ukvm_cc.h
 
 for module in "$@"; do
@@ -98,13 +105,18 @@ TARGET=$(${UKVM_CC} -dumpmachine)
     die "Error running '${UKVM_CC} -dumpmachine', is your compiler working?"
 case ${TARGET} in
     x86_64-*linux*)
-        add_obj ukvm_hv_kvm.o ukvm_hv_kvm_x86_64.o ukvm_cpu_x86_64.o
+        add_obj ukvm_elf.o ukvm_hv_kvm.o ukvm_hv_kvm_x86_64.o ukvm_cpu_x86_64.o
         add_header ukvm_hv_kvm.h ukvm_cpu_x86_64.h
         ;;
     x86_64-*freebsd1[12]*)
-        add_obj ukvm_hv_freebsd.o ukvm_hv_freebsd_x86_64.o ukvm_cpu_x86_64.o
+        add_obj ukvm_elf.o ukvm_hv_freebsd.o ukvm_hv_freebsd_x86_64.o ukvm_cpu_x86_64.o
         add_header ukvm_hv_freebsd.h ukvm_cpu_x86_64.h
-	;;
+	    ;;
+    x86_64-*darwin*)
+        add_ldflags -framework Hypervisor
+        add_obj ukvm_macho.o ukvm_hv_macosx.o ukvm_hv_macosx_x86_64.o ukvm_cpu_x86_64.o
+        add_header ukvm_hv_macosx.h ukvm_cpu_x86_64.h
+        ;;
     *)
         die "Unsupported compiler target: ${TARGET}"
         ;;
