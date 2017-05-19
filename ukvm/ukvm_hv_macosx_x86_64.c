@@ -41,12 +41,12 @@
 #include "ukvm_hv_macosx.h"
 #include "ukvm_cpu_x86_64.h"
 
-#if 1
+
 static uint64_t x86_sreg_to_ar(const struct x86_sreg *s) {
     return (s->g << 15 | s->db << 14 | s->l << 13 | s->avl << 12
             | s->p << 7 | s->dpl << 5 | s->s << 4 | s->type);
 }
-#endif
+
 /* read GPR */
 uint64_t rreg(hv_vcpuid_t vcpu, hv_x86_reg_t reg)
 {
@@ -163,7 +163,6 @@ static int init_vcpu_state(struct ukvm_hv *hv, ukvm_gpa_t gpa_ep)
     wvmcs(vcpu, VMCS_CTRL_EXC_BITMAP, 0xffffffff);
 
 
-#if 1
     wvmcs(vcpu, VMCS_GUEST_CS_BASE, ukvm_x86_sreg_code.base);
     wvmcs(vcpu, VMCS_GUEST_CS_LIMIT, ukvm_x86_sreg_code.limit);
     wvmcs(vcpu, VMCS_GUEST_CS_AR, x86_sreg_to_ar(&ukvm_x86_sreg_code));
@@ -207,95 +206,12 @@ static int init_vcpu_state(struct ukvm_hv *hv, ukvm_gpa_t gpa_ep)
     wvmcs(vcpu, VMCS_GUEST_LDTR_BASE, 0);
     wvmcs(vcpu, VMCS_GUEST_LDTR_LIMIT, 0xffff);
     wvmcs(vcpu, VMCS_GUEST_LDTR_AR, 0x00000082);
-#endif
-
-    if (0) {
-#define BOOT_GDT_NULL    0
-#define BOOT_GDT_CODE    1
-#define BOOT_GDT_CODE32  2
-#define BOOT_GDT_DATA    3
-#define BOOT_GDT_TSS1    4
-#define BOOT_GDT_TSS2    5
-#define BOOT_GDT_MAX     6
-        uint64_t cs_idx = BOOT_GDT_CODE;
-        uint64_t ds_idx = BOOT_GDT_DATA;
-        uint64_t off = X86_GDT_BASE;
-        uint64_t limit = (sizeof(uint64_t) * BOOT_GDT_MAX) - 1; 
-        uint64_t *gdt_entry;
-        gdt_entry = ((uint64_t *) (hv->mem + off));
-        uint64_t cs_off = cs_idx * sizeof(uint64_t);
-        uint64_t ds_off = ds_idx * sizeof(uint64_t);
-        uint64_t cs_ar = (gdt_entry[cs_idx] & 0x0f0ff0000000000) >> 40;
-        uint64_t ds_ar = (gdt_entry[ds_idx] & 0x0f0ff0000000000) >> 40;
-
-        wvmcs(vcpu, VMCS_GUEST_CS_BASE, 0);
-        wvmcs(vcpu, VMCS_GUEST_CS_LIMIT, 0xffffffff);
-        wvmcs(vcpu, VMCS_GUEST_CS_AR, cs_ar);
-        wvmcs(vcpu, VMCS_GUEST_SS_BASE, 0);
-        wvmcs(vcpu, VMCS_GUEST_SS_LIMIT, 0xffffffff);
-        wvmcs(vcpu, VMCS_GUEST_SS_AR, ds_ar);
-        wvmcs(vcpu, VMCS_GUEST_DS_BASE, 0);
-        wvmcs(vcpu, VMCS_GUEST_DS_LIMIT, 0xffffffff);
-        wvmcs(vcpu, VMCS_GUEST_DS_AR, ds_ar);
-        wvmcs(vcpu, VMCS_GUEST_ES_BASE, 0);
-        wvmcs(vcpu, VMCS_GUEST_ES_LIMIT, 0xffffffff);
-        wvmcs(vcpu, VMCS_GUEST_ES_AR, ds_ar);
-        wvmcs(vcpu, VMCS_GUEST_FS_BASE, 0);
-        wvmcs(vcpu, VMCS_GUEST_FS_LIMIT, 0xffffffff);
-        wvmcs(vcpu, VMCS_GUEST_FS_AR, ds_ar);
-        wvmcs(vcpu, VMCS_GUEST_GS_BASE, 0);
-        wvmcs(vcpu, VMCS_GUEST_GS_LIMIT, 0xffffffff);
-        wvmcs(vcpu, VMCS_GUEST_GS_AR, ds_ar);
-
-        wvmcs(vcpu, VMCS_GUEST_CS, cs_off);
-        wvmcs(vcpu, VMCS_GUEST_DS, ds_off);
-        wvmcs(vcpu, VMCS_GUEST_SS, ds_off);
-        wvmcs(vcpu, VMCS_GUEST_ES, ds_off);
-        wvmcs(vcpu, VMCS_GUEST_FS, ds_off);
-        wvmcs(vcpu, VMCS_GUEST_GS, ds_off);
-
-        wvmcs(vcpu, VMCS_GUEST_GDTR_BASE, off);
-        wvmcs(vcpu, VMCS_GUEST_GDTR_LIMIT, limit);
-
-        /* no IDT: all interrupts/exceptions exit */
-        wvmcs(vcpu, VMCS_GUEST_IDTR_BASE, 0);
-        wvmcs(vcpu, VMCS_GUEST_IDTR_LIMIT, 0);
-
-        wvmcs(vcpu, VMCS_GUEST_TR_BASE, 0);
-        wvmcs(vcpu, VMCS_GUEST_TR_LIMIT, 0);
-        wvmcs(vcpu, VMCS_GUEST_TR_AR, 0x0000008b);
-        wvmcs(vcpu, VMCS_GUEST_LDTR_BASE, 0);
-        wvmcs(vcpu, VMCS_GUEST_LDTR_LIMIT, 0xffff);
-        wvmcs(vcpu, VMCS_GUEST_LDTR_AR, 0x00000082);
-    }
-
     
     wvmcs(vcpu, VMCS_GUEST_CR0, X86_CR0_INIT);
     wvmcs(vcpu, VMCS_GUEST_CR3, X86_CR3_INIT);
     wvmcs(vcpu, VMCS_GUEST_CR4, X86_CR4_INIT);
     wvmcs(vcpu, VMCS_GUEST_IA32_EFER, X86_EFER_INIT);
 
-    {
-#define	X86_CR4_FXSR 0x00000200	/* Fast FPU save/restore used by OS */
-#define	X86_CR4_XMM	 0x00000400	/* enable SIMD/MMX2 to use except 16 */
-#define	X86_CR0_NW  0x20000000	/* Not Write-through */
-#define	X86_CR0_CD  0x40000000	/* Cache Disable */
-
-        uint64_t cr0 = (X86_CR0_NE | X86_CR0_PE | X86_CR0_PG)
-            & ~(X86_CR0_NW | X86_CR0_CD);
-        uint64_t cr4 = X86_CR4_PAE | X86_CR4_VMXE;
-        uint64_t efer = X86_EFER_LME | X86_EFER_LMA;
-        
-        /* enable sse */
-        cr0 = (cr0 | X86_CR0_MP) & ~(X86_CR0_EM);
-        cr4 = cr4 | X86_CR4_FXSR | X86_CR4_XMM; /* OSFXSR and OSXMMEXCPT */
-        
-        wvmcs(vcpu, VMCS_GUEST_CR0, cr0);
-        wvmcs(vcpu, VMCS_GUEST_CR4, cr4);
-        wvmcs(vcpu, VMCS_GUEST_IA32_EFER, efer);
-    }
-
-    
     /*
      * Initialize user registers using (Linux) x86_64 ABI convention.
      */

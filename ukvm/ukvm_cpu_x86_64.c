@@ -88,18 +88,4 @@ void ukvm_x86_setup_gdt(uint8_t *mem)
     gdt[X86_GDT_NULL] = null;
     gdt[X86_GDT_CODE] = sreg_to_desc(&ukvm_x86_sreg_code);
     gdt[X86_GDT_DATA] = sreg_to_desc(&ukvm_x86_sreg_data);
-
-    if (0) {
-        printf("overriding gdt setup\n");
-        uint64_t *gdt_entry = (uint64_t *)gdt;
-        printf("gdt code (%d) would be: 0x%llx\n", X86_GDT_CODE, gdt_entry[X86_GDT_CODE]);
-        printf("gdt data (%d) would be: 0x%llx\n", X86_GDT_DATA, gdt_entry[X86_GDT_DATA]);
-        gdt_entry[0] = 0x0000000000000000;
-        //gdt_entry[1] = 0x00af9b000000ffff;	/* 64bit CS		*/
-        gdt_entry[1] = 0x00af99000000ffff;	/* 64bit CS		*/
-        gdt_entry[2] = 0x00cf9b000000ffff;	/* 32bit CS		*/
-        gdt_entry[3] = 0x00cf93000000ffff;	/* DS			*/
-        gdt_entry[4] = 0x0000000000000000;	/* TSS part 1 (via C)	*/
-        gdt_entry[5] = 0x0000000000000000;	/* TSS part 2 (via C)	*/
-    }
 }

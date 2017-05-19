@@ -75,10 +75,16 @@
  * X86_CR4_VMXE should be set on VMENTRY to support old processors, however KVM
  * (but not FreeBSD vmm) does not like us setting this bit. Leave it cleared
  * for now and revisit later.
+ *
+ * MacOSX Hypervisor.framework seems to require this bit to be set.
  */
+#ifdef __APPLE__
+#define X86_CR4_INIT            (X86_CR4_PAE | X86_CR4_OSFXSR | \
+                                X86_CR4_OSXMMEXCPT | X86_CR4_VMXE)
+#else
 #define X86_CR4_INIT            (X86_CR4_PAE | X86_CR4_OSFXSR | \
                                 X86_CR4_OSXMMEXCPT)
-
+#endif
 /* 
  * Intel CPU features in EFER
  */
