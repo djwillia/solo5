@@ -34,6 +34,7 @@
 #include <sys/mman.h>
 
 #include "ukvm.h"
+#include "ukvm_rr.h"
 
 static void setup_cmdline(char *cmdline, int argc, char **argv)
 {
@@ -115,7 +116,8 @@ static void usage(const char *prog)
 
 int main(int argc, char **argv)
 {
-    size_t mem_size = 0x20000000;
+    //size_t mem_size = 0x20000000;
+    size_t mem_size = 0x200000;
     ukvm_gpa_t gpa_ep, gpa_kend;
     const char *prog;
     const char *elffile;
@@ -143,6 +145,7 @@ int main(int argc, char **argv)
             argc--;
             argv++;
         }
+
         if (!matched) {
             warnx("Invalid option: `%s'", *argv);
             usage(prog);

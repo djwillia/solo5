@@ -25,7 +25,7 @@ die ()
 
 if [ "$#" -lt 1 ]; then
     cat <<EOM 1<&2
-Usage: ukvm-configure SOURCEDIR [ MODULES ... ]
+Usage: ukvm-configure UNIKERNEL SOURCEDIR [ MODULES ... ]
 
 Configures ukvm for your target, enabling the MODULES specified.
 
@@ -33,6 +33,7 @@ Generates a Makefile.ukvm in the current directory. Use the "ukvm-bin" target
 to build ukvm.
 
 Options:
+    UNIKERNEL is the path to the unikernel binary this ukvm-bin should run
     SOURCEDIR is the path to the ukvm source
     MODULES can be any combination of: net blk gdb
 
@@ -43,6 +44,10 @@ EOM
 fi
 
 UKVM_CC=${UKVM_CC:-cc}
+
+UNIKERNEL=$(readlink -f $1)
+shift
+
 UKVM_SRC=$(readlink -f $1)
 if [ ! -d ${UKVM_SRC} -o ! -f ${UKVM_SRC}/ukvm_core.c ]; then
     die "Not a ukvm source directory: ${UKVM_SRC}"
@@ -75,12 +80,18 @@ add_module ()
     fi
     enableit="-DUKVM_MODULE_$(echo $1 | tr '[a-z]' '[A-Z]')"
     add_obj "ukvm_module_$1.o"
+    if [ -f ${UKVM_SRC}/ukvm_module_$1.h ]; then
+        add_header "ukvm_module_$1.h"
+    fi
+    if [ "x$1" = "xrr" ]; then
+        add_header "rr_rdtsc_helper.h"
+    fi
     add_cflags "${enableit}"
 }
 
 UKVM_CFLAGS=
 UKVM_LDFLAGS=
-UKVM_LDLIBS=
+UKVM_LDLIBS=-lz
 UKVM_HEADERS=
 UKVM_OBJS=
 add_obj ukvm_core.o ukvm_elf.o ukvm_main.o
@@ -135,8 +146,12 @@ _build-ukvm:
 _build-ukvm/ukvm_%.o: ${UKVM_SRC}/ukvm_%.c \$(MAKEFILE_LIST) | _build-ukvm
 	\$(UKVM_CC) \$(UKVM_CFLAGS) -c \$< -o \$@
 
-ukvm-bin: \$(UKVM_OBJS) \$(MAKEFILE_LIST)
+ukvm-bin: \$(UKVM_OBJS) \$(MAKEFILE_LIST) 
 	\$(UKVM_CC) \$(UKVM_LDFLAGS) -o \$@ \$(UKVM_OBJS) \$(UKVM_LDLIBS)
+
+.PHONY: force_it
+${UKVM_SRC}/rr_rdtsc_helper.h: force_it
+	${UKVM_SRC}/rr_rdtsc_helper ${UNIKERNEL} > \$@
 
 .PHONY: ukvm-clean
 ukvm-clean:

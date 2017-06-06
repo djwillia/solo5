@@ -192,11 +192,15 @@ void ukvm_elf_load(const char *file, uint8_t *mem, size_t mem_size,
             goto out_invalid;
         memset(daddr + filesz, 0, memsz - filesz);
 
+
+#if 0
+        /* XXX temporarily removing protection for rdtsc trapping */
         /* Write-protect the executable segment */
         if (phdr[ph_i].p_flags & PF_X) {
             if (mprotect(daddr, _end - paddr, PROT_EXEC | PROT_READ) == -1)
                 goto out_error;
         }
+#endif
     }
 
     free (phdr);

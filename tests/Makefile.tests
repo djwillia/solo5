@@ -36,7 +36,7 @@ CFLAGS+=-I$(SOLO5_DIR)
 
 ifeq ($(BUILD_UKVM), yes)
 Makefile.ukvm: $(UKVM_SRC)/ukvm-configure
-	$(UKVM_SRC)/ukvm-configure $(UKVM_SRC) $(UKVM_MODULES)
+	$(UKVM_SRC)/ukvm-configure $(UKVM_TARGET) $(UKVM_SRC) $(UKVM_MODULES)
 
 -include Makefile.ukvm
 

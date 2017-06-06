@@ -40,6 +40,7 @@
 #include <unistd.h>
 
 #include "ukvm.h"
+#include "ukvm_rr.h"
 
 struct ukvm_module ukvm_module_core;
 
@@ -53,6 +54,9 @@ struct ukvm_module *ukvm_core_modules[] = {
 #endif
 #ifdef UKVM_MODULE_GDB
     &ukvm_module_gdb,
+#endif
+#ifdef UKVM_MODULE_RR
+    &ukvm_module_rr,
 #endif
     NULL,
 };
@@ -90,17 +94,26 @@ static void hypercall_walltime(struct ukvm_hv *hv, ukvm_gpa_t gpa)
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_walltime));
     struct timespec ts;
 
+    RR_INPUT(hv, walltime, t);
+    
     int rc = clock_gettime(CLOCK_REALTIME, &ts);
     assert(rc == 0);
     t->nsecs = (ts.tv_sec * 1000000000ULL) + ts.tv_nsec;
+
+    RR_OUTPUT(hv, walltime, t);
 }
 
 static void hypercall_puts(struct ukvm_hv *hv, ukvm_gpa_t gpa)
 {
     struct ukvm_puts *p =
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_puts));
+
+    RR_INPUT_REDO(hv, puts, p);
+    
     int rc = write(1, UKVM_CHECKED_GPA_P(hv, p->data, p->len), p->len);
     assert(rc >= 0);
+
+    RR_OUTPUT(hv, puts, p);
 }
 
 static struct pollfd pollfds[NUM_MODULES];
@@ -125,12 +138,16 @@ static void hypercall_poll(struct ukvm_hv *hv, ukvm_gpa_t gpa)
     struct timespec ts;
     int rc;
 
+    RR_INPUT(hv, poll, t);
+
     ts.tv_sec = t->timeout_nsecs / 1000000000ULL;
     ts.tv_nsec = t->timeout_nsecs % 1000000000ULL;
 
     rc = ppoll(pollfds, npollfds, &ts, &pollsigmask);
     assert(rc >= 0);
     t->ret = rc;
+
+    RR_OUTPUT(hv, poll, t);
 }
 
 static int setup(struct ukvm_hv *hv)

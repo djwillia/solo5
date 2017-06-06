@@ -1,0 +1,12 @@
+#!/bin/bash
+
+echo "#ifndef __RR_RDTSC_HELPER__"
+echo "#define __RR_RDTSC_HELPER__"
+
+echo "static uint64_t rdtsc_locs[] = { "
+for f in `objdump -S $1 | grep "^ *[0-9a-f]*:.*rdtsc" | sed s/:.*//`; do
+    echo "    0x$f,"
+done
+echo "};"
+echo "#define NUM_RDTSC_LOCS (sizeof(rdtsc_locs)/sizeof(uint64_t))"
+echo "#endif"
