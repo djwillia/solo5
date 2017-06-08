@@ -16,8 +16,9 @@
 # NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 # CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-UKVM_TARGETS=test_ping_serve.ukvm ukvm-bin
+UKVM_TARGET=test_ping_serve.ukvm
+UKVM_TARGETS=$(UKVM_TARGET) ukvm-bin
 VIRTIO_TARGETS=test_ping_serve.virtio
-UKVM_MODULES=net
+UKVM_MODULES=net rr
 
 include ../Makefile.tests

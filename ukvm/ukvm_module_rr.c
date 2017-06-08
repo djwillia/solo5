@@ -361,6 +361,10 @@ void rr(uint8_t *x, size_t sz, int l, const char *func, int line)
             if (0 && do_checks)
                 check_checks(x, sz, func, line);
             ret = read(rr_fd, x, sz);
+            if (ret == 0)
+                errx(0, "Reached end of replay\n");
+            if (ret != sz)
+                printf("ret=%u, sz=%lu\n", ret, sz);
             assert(ret == sz);
         }
         if (rr_mode == RR_MODE_RECORD)
@@ -508,7 +512,7 @@ void rr_ukvm_puts(struct ukvm_hv *hv, struct ukvm_puts *o, int loc)
     HEAVY_CHECKS_IN();
         
     CHECK(loc, &o->data, sizeof(o->data));
-    CHECK(loc, hv->mem + o->data, o->len);
+    CHECK(loc, UKVM_CHECKED_GPA_P(hv, o->data, o->len), o->len);
     CHECK(loc, &o->len, sizeof(o->len));
 
     HEAVY_CHECKS_OUT();
@@ -533,6 +537,36 @@ void rr_ukvm_rdtsc(struct ukvm_hv *hv, uint64_t *new_tsc, int loc)
     HEAVY_CHECKS_OUT();
 }
 
+void rr_ukvm_netinfo(struct ukvm_hv *hv, struct ukvm_netinfo *o, int loc)
+{
+    HEAVY_CHECKS_IN();
+    
+    RR(loc, &o->mac_str, sizeof(o->mac_str));
+
+    HEAVY_CHECKS_OUT();
+}
+void rr_ukvm_netwrite(struct ukvm_hv *hv, struct ukvm_netwrite *o, int loc)
+{
+    HEAVY_CHECKS_IN();
+    
+    CHECK(loc, &o->data, sizeof(o->data));
+    RR(loc, UKVM_CHECKED_GPA_P(hv, o->data, o->len), o->len);
+    CHECK(loc, &o->len, sizeof(o->len));
+	RR(loc, &o->ret, sizeof(o->ret));
+
+    HEAVY_CHECKS_OUT();
+}
+void rr_ukvm_netread(struct ukvm_hv *hv, struct ukvm_netread *o, int loc)
+{
+    HEAVY_CHECKS_IN();
+
+    CHECK(loc, &o->data, sizeof(o->data));
+	RR(loc, &o->len, sizeof(o->len));
+    RR(loc, UKVM_CHECKED_GPA_P(hv, o->data, o->len), o->len);
+	RR(loc, &o->ret, sizeof(o->ret));
+
+    HEAVY_CHECKS_OUT();
+}
 #if 0
 void rr_ukvm_boot_info(struct platform *p, struct ukvm_boot_info *o, int loc)
 {
@@ -575,36 +609,6 @@ void rr_ukvm_blkread(struct platform *p, struct ukvm_blkread *o, int loc)
     CHECK(loc, &o->data, sizeof(o->data));
     CHECK(loc, p->mem + o->data, o->len);
 	RR(loc, &o->len, sizeof(o->len));
-	RR(loc, &o->ret, sizeof(o->ret));
-
-    HEAVY_CHECKS_OUT();
-}
-void rr_ukvm_netinfo(struct platform *p, struct ukvm_netinfo *o, int loc)
-{
-    HEAVY_CHECKS_IN();
-    
-    RR(loc, &o->mac_str, sizeof(o->mac_str));
-
-    HEAVY_CHECKS_OUT();
-}
-void rr_ukvm_netwrite(struct platform *p, struct ukvm_netwrite *o, int loc)
-{
-    HEAVY_CHECKS_IN();
-    
-    CHECK(loc, &o->data, sizeof(o->data));
-    CHECK(loc, p->mem + o->data, o->len);
-    CHECK(loc, &o->len, sizeof(o->len));
-	RR(loc, &o->ret, sizeof(o->ret));
-
-    HEAVY_CHECKS_OUT();
-}
-void rr_ukvm_netread(struct platform *p, struct ukvm_netread *o, int loc)
-{
-    HEAVY_CHECKS_IN();
-    
-    CHECK(loc, &o->data, sizeof(o->data));
-	RR(loc, &o->len, sizeof(o->len));
-    RR(loc, p->mem + o->data, o->len);
 	RR(loc, &o->ret, sizeof(o->ret));
 
     HEAVY_CHECKS_OUT();

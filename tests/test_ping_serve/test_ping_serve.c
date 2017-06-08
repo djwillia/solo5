@@ -270,7 +270,7 @@ static void ping_serve(int verbose, int limit)
     for (;;) {
         struct ether *p = (struct ether *)&buf;
         int len = sizeof(buf);
-
+        assert(len == 1526);
         /* wait for packet */
         while (solo5_net_read_sync(buf, &len) != 0) {
             solo5_poll(solo5_clock_monotonic() + 1000000000ULL);

@@ -55,6 +55,7 @@
 #endif
 
 #include "ukvm.h"
+#include "ukvm_rr.h"
 
 static char *netiface;
 static int netfd;
@@ -178,7 +179,11 @@ static void hypercall_netinfo(struct ukvm_hv *hv, ukvm_gpa_t gpa)
     struct ukvm_netinfo *info =
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_netinfo));
 
+    RR_INPUT(hv, netinfo, info);
+    
     memcpy(info->mac_str, netinfo.mac_str, sizeof(netinfo.mac_str));
+
+    RR_OUTPUT(hv, netinfo, info);
 }
 
 static void hypercall_netwrite(struct ukvm_hv *hv, ukvm_gpa_t gpa)
@@ -187,9 +192,13 @@ static void hypercall_netwrite(struct ukvm_hv *hv, ukvm_gpa_t gpa)
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_netwrite));
     int ret;
 
+    RR_INPUT(hv, netwrite, wr);
+    
     ret = write(netfd, UKVM_CHECKED_GPA_P(hv, wr->data, wr->len), wr->len);
     assert(wr->len == ret);
     wr->ret = 0;
+
+    RR_OUTPUT(hv, netwrite, wr);
 }
 
 static void hypercall_netread(struct ukvm_hv *hv, ukvm_gpa_t gpa)
@@ -198,15 +207,21 @@ static void hypercall_netread(struct ukvm_hv *hv, ukvm_gpa_t gpa)
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_netread));
     int ret;
 
+    RR_INPUT(hv, netread, rd);
+
     ret = read(netfd, UKVM_CHECKED_GPA_P(hv, rd->data, rd->len), rd->len);
     if ((ret == 0) ||
         (ret == -1 && errno == EAGAIN)) {
         rd->ret = -1;
-        return;
+        goto out;
     }
     assert(ret > 0);
     rd->len = ret;
     rd->ret = 0;
+
+ out:
+    RR_OUTPUT(hv, netread, rd);
+    return;
 }
 
 static int handle_cmdarg(char *cmdarg)
