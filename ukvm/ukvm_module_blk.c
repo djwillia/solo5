@@ -32,6 +32,7 @@
 #include <unistd.h>
 
 #include "ukvm.h"
+#include "ukvm_rr.h"
 
 static struct ukvm_blkinfo blkinfo;
 static char *diskfile;
@@ -42,9 +43,13 @@ static void hypercall_blkinfo(struct ukvm_hv *hv, ukvm_gpa_t gpa)
     struct ukvm_blkinfo *info =
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_blkinfo));
 
+    RR_INPUT(hv, blkinfo, info);
+    
     info->sector_size = blkinfo.sector_size;
     info->num_sectors = blkinfo.num_sectors;
     info->rw = blkinfo.rw;
+
+    RR_OUTPUT(hv, blkinfo, info);
 }
 
 static void hypercall_blkwrite(struct ukvm_hv *hv, ukvm_gpa_t gpa)
@@ -54,22 +59,27 @@ static void hypercall_blkwrite(struct ukvm_hv *hv, ukvm_gpa_t gpa)
     ssize_t ret;
     off_t pos, end;
 
+    RR_INPUT(hv, blkwrite, wr);
+    
     assert(wr->len <= SSIZE_MAX);
     if (wr->sector >= blkinfo.num_sectors) {
         wr->ret = -1;
-        return;
+        goto out;
     }
     pos = (off_t)blkinfo.sector_size * (off_t)wr->sector;
     if (add_overflow(pos, wr->len, end)
             || (end > blkinfo.num_sectors * blkinfo.sector_size)) {
         wr->ret = -1;
-        return;
+        goto out;
     }
 
     ret = pwrite(diskfd, UKVM_CHECKED_GPA_P(hv, wr->data, wr->len), wr->len,
             pos);
     assert(ret == wr->len);
     wr->ret = 0;
+
+ out:
+    RR_OUTPUT(hv, blkwrite, wr);
 }
 
 static void hypercall_blkread(struct ukvm_hv *hv, ukvm_gpa_t gpa)
@@ -79,22 +89,27 @@ static void hypercall_blkread(struct ukvm_hv *hv, ukvm_gpa_t gpa)
     ssize_t ret;
     off_t pos, end;
 
+    RR_INPUT(hv, blkread, rd);
+    
     assert(rd->len <= SSIZE_MAX);
     if (rd->sector >= blkinfo.num_sectors) {
         rd->ret = -1;
-        return;
+        goto out;
     }
     pos = (off_t)blkinfo.sector_size * (off_t)rd->sector;
     if (add_overflow(pos, rd->len, end)
             || (end > blkinfo.num_sectors * blkinfo.sector_size)) {
         rd->ret = -1;
-        return;
+        goto out;
     }
 
     ret = pread(diskfd, UKVM_CHECKED_GPA_P(hv, rd->data, rd->len), rd->len,
             pos);
     assert(ret == rd->len);
     rd->ret = 0;
+
+ out:
+    RR_OUTPUT(hv, blkread, rd);
 }
 
 static int handle_cmdarg(char *cmdarg)

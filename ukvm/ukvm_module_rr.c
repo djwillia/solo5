@@ -550,7 +550,7 @@ void rr_ukvm_netwrite(struct ukvm_hv *hv, struct ukvm_netwrite *o, int loc)
     HEAVY_CHECKS_IN();
     
     CHECK(loc, &o->data, sizeof(o->data));
-    RR(loc, UKVM_CHECKED_GPA_P(hv, o->data, o->len), o->len);
+    CHECK(loc, UKVM_CHECKED_GPA_P(hv, o->data, o->len), o->len);
     CHECK(loc, &o->len, sizeof(o->len));
 	RR(loc, &o->ret, sizeof(o->ret));
 
@@ -568,18 +568,19 @@ void rr_ukvm_netread(struct ukvm_hv *hv, struct ukvm_netread *o, int loc)
     HEAVY_CHECKS_OUT();
 }
 #if 0
-void rr_ukvm_boot_info(struct platform *p, struct ukvm_boot_info *o, int loc)
+void rr_ukvm_boot_info(struct ukvm_hv *hv, struct ukvm_boot_info *o, int loc)
 {
     HEAVY_CHECKS_IN();
     
     RR(loc, &o->mem_size, sizeof(o->mem_size));
     RR(loc, &o->kernel_end, sizeof(o->kernel_end));
     RR(loc, &o->cmdline_len, sizeof(o->cmdline_len));
-    RR(loc, p->mem + o->cmdline, o->cmdline_len);
+    RR(loc, UKVM_CHECKED_GPA_P(hv, o->cmdline, o->cmdline_len), o->cmdline_len);
 
     HEAVY_CHECKS_OUT();
 }
-void rr_ukvm_blkinfo(struct platform *p, struct ukvm_blkinfo *o, int loc)
+#endif
+void rr_ukvm_blkinfo(struct ukvm_hv *hv, struct ukvm_blkinfo *o, int loc)
 {
     HEAVY_CHECKS_IN();
     
@@ -589,31 +590,32 @@ void rr_ukvm_blkinfo(struct platform *p, struct ukvm_blkinfo *o, int loc)
 
     HEAVY_CHECKS_OUT();
 }
-void rr_ukvm_blkwrite(struct platform *p, struct ukvm_blkwrite *o, int loc)
+void rr_ukvm_blkwrite(struct ukvm_hv *hv, struct ukvm_blkwrite *o, int loc)
 {
     HEAVY_CHECKS_IN();
     
     CHECK(loc, &o->sector, sizeof(o->sector));
     CHECK(loc, &o->data, sizeof(o->data));
-    CHECK(loc, p->mem + o->data, o->len);
+    CHECK(loc, UKVM_CHECKED_GPA_P(hv, o->data, o->len), o->len);
     CHECK(loc, &o->len, sizeof(o->len));
     RR(loc, &o->ret, sizeof(o->ret));
 
     HEAVY_CHECKS_OUT();
 }
-void rr_ukvm_blkread(struct platform *p, struct ukvm_blkread *o, int loc)
+void rr_ukvm_blkread(struct ukvm_hv *hv, struct ukvm_blkread *o, int loc)
 {
     HEAVY_CHECKS_IN();
     
     CHECK(loc, &o->sector, sizeof(o->sector));
     CHECK(loc, &o->data, sizeof(o->data));
-    CHECK(loc, p->mem + o->data, o->len);
 	RR(loc, &o->len, sizeof(o->len));
+    RR(loc, UKVM_CHECKED_GPA_P(hv, o->data, o->len), o->len);
 	RR(loc, &o->ret, sizeof(o->ret));
 
     HEAVY_CHECKS_OUT();
 }
-void rr_ukvm_cpuid(struct platform *p, struct ukvm_cpuid *o, int loc)
+#if 0
+void rr_ukvm_cpuid(struct ukvm_hv *hv, struct ukvm_cpuid *o, int loc)
 {
     HEAVY_CHECKS_IN();
     
