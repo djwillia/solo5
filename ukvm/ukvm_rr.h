@@ -6,6 +6,7 @@ enum {
     RR_LOC_OUT,
 };
 enum {
+    RR_MODE_NONE = 0,
     RR_MODE_RECORD = 1,
     RR_MODE_REPLAY,
 };
@@ -29,18 +30,22 @@ void rr_ukvm_rdrand(struct ukvm_hv *hv, uint64_t *r, int loc);
  *    (struct name, pointer to struct, offset for any data ptrs) 
  *    Redo re-performs the function (e.g., for console out) 
  */
-#define _RR_INPUT(p,s,o,r) do {                      \
-        rr_ukvm_##s(p, o, RR_LOC_IN);                \
-        if (rr_mode == RR_MODE_REPLAY)               \
-            if(r) goto rr_output_##s;                \
+#define _RR_INPUT(p,s,o,r) do {                             \
+        if (rr_mode != RR_MODE_NONE) {                      \
+            rr_ukvm_##s(p, o, RR_LOC_IN);                   \
+            if (rr_mode == RR_MODE_REPLAY)                  \
+                if(r) goto rr_output_##s;                   \
+        }                                                   \
     } while (0)
 
 #define RR_INPUT_REDO(p,s,o) _RR_INPUT(p,s,o,0)
 #define RR_INPUT(p,s,o) _RR_INPUT(p,s,o,1)
           
-#define RR_OUTPUT(p,s,o) do {                   \
-    rr_output_##s:                              \
-        rr_ukvm_##s(p, o, RR_LOC_OUT);          \
+#define RR_OUTPUT(p,s,o) do {                               \
+        if (rr_mode != RR_MODE_NONE) {                      \
+        rr_output_##s:                                      \
+            rr_ukvm_##s(p, o, RR_LOC_OUT);                  \
+        }                                                   \
     } while (0)
 
 #endif

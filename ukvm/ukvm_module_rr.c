@@ -28,7 +28,7 @@
 #define CHECKS_INIT() do{}while(0)
 #endif
 
-int rr_mode;
+int rr_mode = RR_MODE_NONE;
 static int rr_fd;
 
 void rr(uint8_t *x, size_t sz, int l, const char *func, int line)
@@ -286,6 +286,9 @@ static int setup(struct ukvm_hv *hv)
 {
     int ret;
 
+    if (rr_mode == RR_MODE_NONE)
+        return 0;
+    
     rr_init("rr_out.dat");
     
     /* XXX should rdtsc trapping/emulation be its own module? */
