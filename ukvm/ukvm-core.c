@@ -557,6 +557,7 @@ static int vcpu_loop(struct kvm_run *run, int vcpufd, uint8_t *mem)
             continue;
 
         switch (run->exit_reason) {
+        case KVM_EXIT_SHUTDOWN:
         case KVM_EXIT_HLT:
             /* Guest has halted the CPU, this is considered as a normal exit. */
             return 0;
