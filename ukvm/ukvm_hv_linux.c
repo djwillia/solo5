@@ -153,11 +153,13 @@ void ukvm_hv_vcpu_init(struct ukvm_hv *hv, ukvm_gpa_t gpa_ep,
     bi->heap_start = (uint64_t)malloc(hv->mem_size);
     bi->mem_size = hv->mem_size;
     bi->cmdline = (uint64_t)malloc(UKVM_CMDLINE_SIZE);
-    bi->cpu.tsc_freq =   get_cpuinfo_freq();
+    bi->cpu.tsc_freq = get_cpuinfo_freq();
     bi->hypercall_ptr = (uint64_t)ukvm_hv_handle_exit;
     hv->b->entry = gpa_ep;
     hv->b->arg = bi;
 
+    printf("tsc_freq is %ld\n", bi->cpu.tsc_freq);
+    
     *cmdline = (void *)bi->cmdline;
 }
 

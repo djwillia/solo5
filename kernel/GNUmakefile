@@ -77,10 +77,11 @@ muen/muen-poll.o \
 muen/muen-sinfo.o \
 $(COMMON_COBJS)
 
+#unix/time.o
 # regular ukvm, minux platform_intr, cpu_${TARGET_ARCH} and cpu_vectors_${TARGET_ARCH}
 UNIX_COBJS=\
 unix/kernel.o \
-unix/time.o \
+ukvm/time.o \
 unix/platform.o \
 unix/unix-mem.o \
 ukvm/platform_init.o \

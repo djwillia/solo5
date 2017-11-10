@@ -20,17 +20,17 @@
 
 #include "kernel.h"
 
-uint64_t solo5_clock_monotonic(void)
-{
-    struct ukvm_walltime t;
-    ukvm_do_hypercall(UKVM_HYPERCALL_WALLTIME, &t);
-    return t.nsecs;
-}
+/* uint64_t solo5_clock_monotonic(void) */
+/* { */
+/*     struct ukvm_walltime t; */
+/*     ukvm_do_hypercall(UKVM_HYPERCALL_WALLTIME, &t); */
+/*     return t.nsecs; */
+/* } */
 
-/* return wall time in nsecs */
-uint64_t solo5_clock_wall(void)
-{
-    struct ukvm_walltime t;
-    ukvm_do_hypercall(UKVM_HYPERCALL_WALLTIME, &t);
-    return t.nsecs;
-}
+/* /\* return wall time in nsecs *\/ */
+/* uint64_t solo5_clock_wall(void) */
+/* { */
+/*     struct ukvm_walltime t; */
+/*     ukvm_do_hypercall(UKVM_HYPERCALL_WALLTIME, &t); */
+/*     return t.nsecs; */
+/* } */

@@ -35,6 +35,7 @@ void _start(void *arg)
     log(INFO, "____/\\___/ _|\\___/____/\n");
 
     mem_init();
+    time_init(arg);
     net_init();
 
     ret = solo5_app_main(cmdline);
