@@ -39,6 +39,7 @@
 #include "ukvm.h"
 #include "ukvm_hv_linux.h"
 
+#if 0
 static void install_syscall_filter(void)
 {
     scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_KILL);
@@ -95,7 +96,7 @@ static void install_syscall_filter(void)
 
     seccomp_load(ctx);
 }
-
+#endif
 
 struct ukvm_hv *ukvm_hv_init(size_t mem_size)
 {
@@ -175,7 +176,7 @@ void ukvm_hv_vcpu_loop(struct ukvm_hv *hv)
     void (*_start)(void *) = (void (*)(void *))hv->b->entry;
     loop_hv = hv;
 
-    install_syscall_filter();
+    //install_syscall_filter();
 
     /* 
      * First call into unikernel, call start.  Note we are sharing our
