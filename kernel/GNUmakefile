@@ -141,4 +141,4 @@ muen/solo5.o: $(MUEN_COBJS) ukvm/solo5.lds
 
 .PHONY: clean
 clean:
-	$(RM) *.o virtio/*.o ukvm/*.o muen/*.o kernel
+	$(RM) *.o virtio/*.o ukvm/*.o muen/*.o unix/*.o kernel
