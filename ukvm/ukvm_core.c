@@ -103,7 +103,7 @@ static void hypercall_puts(struct ukvm_hv *hv, ukvm_gpa_t gpa)
     assert(rc >= 0);
 }
 
-static struct pollfd pollfds[NUM_MODULES];
+struct pollfd pollfds[NUM_MODULES];
 static int npollfds = 0;
 static sigset_t pollsigmask;
 
@@ -154,5 +154,5 @@ static int setup(struct ukvm_hv *hv)
 
 struct ukvm_module ukvm_module_core = {
     .name = "core",
-    .setup = setup
+    .setup = setup,
 };
