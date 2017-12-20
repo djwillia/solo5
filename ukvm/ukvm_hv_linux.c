@@ -83,16 +83,15 @@ static void install_syscall_filter(void)
      */
 #ifdef UKVM_MODULE_NET
     int netfd = ukvm_module_net.get_fd();
-    seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 2,
-                     SCMP_A0(SCMP_CMP_EQ, netfd),
-                     SCMP_A2(SCMP_CMP_EQ, 1526));
+    seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 1,
+                     SCMP_A0(SCMP_CMP_EQ, netfd));
     seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 1,
                      SCMP_A0(SCMP_CMP_EQ, netfd));
     seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ppoll), 2,
                      SCMP_A0(SCMP_CMP_EQ, (scmp_datum_t)&pollfds),
                      SCMP_A1(SCMP_CMP_EQ, 1));
 #endif
-    
+
     seccomp_load(ctx);
 }
 
