@@ -116,6 +116,7 @@ static int extract_trace(char *pidbuf) {
     ret = asprintf(&extractcmd,
                    "cat /sys/kernel/debug/tracing/trace "           \
                    "| grep \"\\-%s \" "                             \
+                   "| grep -v \"=>\" "                              \
                    "| tee %s.raw "                                  \
                    "| grep -v \"^#\" "                              \
                    "| cut -f 3 -d '|' "                             \
