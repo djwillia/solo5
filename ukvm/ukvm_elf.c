@@ -26,6 +26,7 @@
  */
 
 #define _GNU_SOURCE
+#include <assert.h>
 #include <err.h>
 #include <elf.h>
 #include <errno.h>
@@ -38,10 +39,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <stdio.h>
 
 #include "ukvm.h"
 
-static ssize_t pread_in_full(int fd, void *buf, size_t count, off_t offset)
+#define ALIGN_PAGE_UP(x) (4096 * ((x + 4095) / 4096))
+#define DOMMAP
+
+static ssize_t pread_in_full(int fd, void *buf, size_t count, off_t offset, int mmapable)
 {
     ssize_t total = 0;
     char *p = buf;
@@ -51,10 +56,39 @@ static ssize_t pread_in_full(int fd, void *buf, size_t count, off_t offset)
         return -1;
     }
 
+    if (mmapable) {
+        off_t minimal_offset = 0x100000 - (uint64_t)buf;
+
+        p += minimal_offset;
+        offset += minimal_offset;
+        count -= minimal_offset;
+    }
+
     while (count > 0) {
         ssize_t nr;
+        char *addr;
 
-        nr = pread(fd, p, count, offset);
+        if (mmapable) {
+#ifdef DOMMAP
+            /* XXX: at the moment we have to mark this as writable because the
+             * last portion of the last page has to be zeroed out. */
+            addr = mmap(p, count,
+                        PROT_READ|PROT_EXEC|PROT_WRITE,
+                        MAP_PRIVATE|MAP_FIXED,
+                        fd, offset);
+            assert((off_t)addr == (off_t)p);
+#else
+            addr = mmap(p, count,
+                        PROT_READ|PROT_WRITE|PROT_EXEC,
+                        MAP_SHARED|MAP_ANONYMOUS,
+                        -1, 0);
+            assert((off_t)addr == (off_t)p);
+            nr = pread(fd, p, count, offset);
+#endif
+            nr = count;
+        } else
+            nr = pread(fd, p, count, offset);
+
         if (nr == 0)
             return total;
         else if (nr == -1 && errno == EINTR)
@@ -107,13 +141,13 @@ void ukvm_elf_load(const char *file, uint8_t *mem, size_t mem_size,
 
     fd_kernel = open(file, O_RDONLY);
     if (fd_kernel == -1)
-        goto out_error;
+        err(1, "%s can't open kernel", file);
 
-    numb = pread_in_full(fd_kernel, &hdr, sizeof(Elf64_Ehdr), 0);
+    numb = pread_in_full(fd_kernel, &hdr, sizeof(Elf64_Ehdr), 0, 0);
     if (numb < 0)
-        goto out_error;
+        err(1, "%s failed pread", file);
     if (numb != sizeof(Elf64_Ehdr))
-        goto out_invalid;
+            errx(1, "%s: failed pread", file);
 
     /*
      * Validate program is in ELF64 format:
@@ -136,7 +170,7 @@ void ukvm_elf_load(const char *file, uint8_t *mem, size_t mem_size,
 #error Unsupported target
 #endif
         )
-        goto out_invalid;
+           errx(1, "%s: bad header entry", file);
 
     ph_off = hdr.e_phoff;
     ph_entsz = hdr.e_phentsize;
@@ -145,12 +179,12 @@ void ukvm_elf_load(const char *file, uint8_t *mem, size_t mem_size,
 
     phdr = malloc(buflen);
     if (!phdr)
-        goto out_error;
-    numb = pread_in_full(fd_kernel, phdr, buflen, ph_off);
+        err(1, "%s failed malloc", file);
+    numb = pread_in_full(fd_kernel, phdr, buflen, ph_off, 0);
     if (numb < 0)
-        goto out_error;
+        err(1, "%s failed pread", file);
     if (numb != buflen)
-        goto out_invalid;
+            errx(1, "%s: incomplete pread 1", file);
 
     /*
      * Load all segments with the LOAD directive from the elf file at offset
@@ -158,32 +192,31 @@ void ukvm_elf_load(const char *file, uint8_t *mem, size_t mem_size,
      * copied is p_filesz.  However, each segment should be given
      * p_memsz aligned up to p_align bytes on memory.
      */
+    uint64_t _end = 0;
     for (ph_i = 0; ph_i < ph_cnt; ph_i++) {
         uint8_t *daddr;
-        uint64_t _end;
         size_t offset = phdr[ph_i].p_offset;
         size_t filesz = phdr[ph_i].p_filesz;
         size_t memsz = phdr[ph_i].p_memsz;
         uint64_t paddr = phdr[ph_i].p_paddr;
         uint64_t align = phdr[ph_i].p_align;
         uint64_t result;
-        int prot;
 
         if (phdr[ph_i].p_type != PT_LOAD)
             continue;
 
         if ((paddr >= mem_size) || add_overflow(paddr, filesz, result)
                 || (result >= mem_size))
-            goto out_invalid;
+                errx(1, "%s: paddr >= mem_size", file);
         if (add_overflow(paddr, memsz, result) || (result >= mem_size))
-            goto out_invalid;
+                errx(1, "%s: paddr >= mem_size", file);
         /*
          * Verify that align is a non-zero power of 2 and safely compute
          * ((_end + (align - 1)) & -align).
          */
         if (align > 0 && (align & (align - 1)) == 0) {
             if (add_overflow(result, (align - 1), _end))
-                goto out_invalid;
+                    errx(1, "%s: not aligned", file);
             _end = _end & -align;
         }
         else {
@@ -193,35 +226,36 @@ void ukvm_elf_load(const char *file, uint8_t *mem, size_t mem_size,
             *p_end = _end;
 
         daddr = mem + paddr;
-        numb = pread_in_full(fd_kernel, daddr, filesz, offset);
-        if (numb < 0)
-            goto out_error;
-        if (numb != filesz)
-            goto out_invalid;
-        memset(daddr + filesz, 0, memsz - filesz);
+        numb = pread_in_full(fd_kernel, daddr, ALIGN_PAGE_UP(filesz), offset, 1);
+        assert(numb = ALIGN_PAGE_UP(filesz));
 
-        prot = PROT_NONE;
-        if (phdr[ph_i].p_flags & PF_R)
-            prot |= PROT_READ;
-        if (phdr[ph_i].p_flags & PF_W)
-            prot |= PROT_WRITE;
-        if (phdr[ph_i].p_flags & PF_X)
-            prot |= PROT_EXEC;
-        if (prot & PROT_WRITE && prot & PROT_EXEC)
-            warnx("%s: Warning: phdr[%u] requests WRITE and EXEC permissions",
-                  file, ph_i);
-        if (mprotect(daddr, _end - paddr, prot) == -1)
-            goto out_error;
+        /* XXX: daddr + filesz can overflow */
+        uint64_t aligned_filesz_end = ALIGN_PAGE_UP((uint64_t)daddr + filesz);
+        if (_end > aligned_filesz_end) {
+            /* XXX: remove the PROT_EXEC */
+            void *addr = mmap((void *)aligned_filesz_end, _end - aligned_filesz_end,
+                            PROT_READ|PROT_WRITE|PROT_EXEC,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            assert((off_t)addr == aligned_filesz_end);
+            if (madvise((void *)aligned_filesz_end,  _end - aligned_filesz_end,
+                        MADV_MERGEABLE) != 0)
+                err(1, "Error with madvise MADV_MERGEABLE");
+        }
+        memset(daddr + filesz, 0, memsz - filesz);
     }
+
+    /* Allocate the rest of the memory */
+    /* XXX: remove the PROT_EXEC */
+    void *addr = mmap((void *)_end, mem_size - _end,
+                      PROT_READ|PROT_WRITE|PROT_EXEC,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    assert((off_t)addr == _end);
+    if (madvise((void *)_end, mem_size - _end,
+                MADV_MERGEABLE) != 0)
+        err(1, "Error with madvise MADV_MERGEABLE");
 
     free (phdr);
     close (fd_kernel);
     *p_entry = hdr.e_entry;
     return;
-
-out_error:
-    err(1, "%s", file);
-
-out_invalid:
-    errx(1, "%s: Exec format error", file);
 }

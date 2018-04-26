@@ -25,7 +25,7 @@ void _start(void *arg)
     static struct solo5_start_info si;
 
     console_init();
-    cpu_init();
+    //cpu_init();
     platform_init(arg);
     si.cmdline = cmdline_parse(platform_cmdline());
 

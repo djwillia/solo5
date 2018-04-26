@@ -33,6 +33,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#define __UKVM_LINUX__
+
 
 /*
  * Arch-dependent part of struct ukvm_boot_info.
@@ -46,6 +48,8 @@ struct ukvm_cpu_boot_info {
  * PIO base address used to dispatch hypercalls.
  */
 #define UKVM_HYPERCALL_PIO_BASE 0x500
+
+#define LINUX_HYPERCALL_ADDRESS 0x10000
 
 #    ifdef UKVM_HOST
 /*
@@ -62,6 +66,12 @@ typedef uint64_t ukvm_gpa_t;
  */
 static inline void ukvm_do_hypercall(int n, volatile void *arg)
 {
+#ifdef __UKVM_LINUX__
+    uint64_t hcaddr = *((uint64_t *)LINUX_HYPERCALL_ADDRESS);
+    void (*_hc)(int,void *) = (void (*)(int, void *))hcaddr;
+    _hc(n, (void *)arg);
+#else    
+
 #    ifdef assert
     assert(((uint64_t)arg <= UINT32_MAX));
 #    endif
@@ -70,6 +80,7 @@ static inline void ukvm_do_hypercall(int n, volatile void *arg)
             : "a" ((uint32_t)((uint64_t)arg)),
               "d" ((uint16_t)(UKVM_HYPERCALL_PIO_BASE + n))
             : "memory");
+#endif /*__UKVM_LINUX__*/
 }
 #    endif
 

@@ -57,7 +57,7 @@
 #include "ukvm.h"
 
 static char *netiface;
-static int netfd;
+static int netfd; 
 static struct ukvm_netinfo netinfo;
 static int cmdline_mac = 0;
 
@@ -279,9 +279,15 @@ static char *usage(void)
         "    [ --net-mac=HWADDR ] (guest MAC address)";
 }
 
+static int get_fd(void)
+{
+    return netfd;
+}
+
 struct ukvm_module ukvm_module_net = {
     .name = "net",
     .setup = setup,
     .handle_cmdarg = handle_cmdarg,
-    .usage = usage
+    .usage = usage,
+    .get_fd = get_fd,
 };

@@ -34,7 +34,7 @@ to build ukvm.
 
 Options:
     SOURCEDIR is the path to the ukvm source
-    MODULES can be any combination of: net blk gdb
+    MODULES can be any combination of: net blk gdb ftrace
 
 To use a cross-compiler, set the UKVM_CC environment variable.
 To build ukvm statically, set the UKVM_STATIC environment variable.
@@ -68,6 +68,13 @@ add_header ()
     done
 }
 
+add_ldlib ()
+{
+    for i in "$@"; do
+        UKVM_LDLIBS="${UKVM_LDLIBS} ${i}"
+    done
+}
+
 add_module ()
 {
     if [ ! -f ${UKVM_SRC}/ukvm_module_$1.c ]; then
@@ -79,7 +86,7 @@ add_module ()
 }
 
 UKVM_CFLAGS=
-UKVM_LDFLAGS=
+UKVM_LDFLAGS="-T ${UKVM_SRC}/ukvm.lds -z execstack"
 UKVM_LDLIBS=
 UKVM_HEADERS=
 UKVM_OBJS=
@@ -91,15 +98,18 @@ for module in "$@"; do
     add_module ${module}
 done
 
-[ -n "${UKVM_STATIC}" ] && UKVM_LDFLAGS="-static"
+[ -n "${UKVM_STATIC}" ] && UKVM_LDFLAGS+=" -static"
 
 TARGET=$(${UKVM_CC} -dumpmachine)
 [ $? -ne 0 ] &&
     die "Error running '${UKVM_CC} -dumpmachine', is your compiler working?"
 case ${TARGET} in
     x86_64-*linux*)
-        add_obj ukvm_hv_kvm.o ukvm_hv_kvm_x86_64.o ukvm_cpu_x86_64.o
-        add_header ukvm_hv_kvm.h ukvm_cpu_x86_64.h
+        #add_obj ukvm_hv_kvm.o ukvm_hv_kvm_x86_64.o ukvm_cpu_x86_64.o
+        #add_header ukvm_hv_kvm.h ukvm_cpu_x86_64.h
+        add_obj ukvm_hv_linux.o ukvm_syscall-reporter.o ukvm_cpu_x86_64.o
+        add_header ukvm_hv_linux.h seccomp-bpf.h
+        add_ldlib -lseccomp
         ;;
     x86_64-*freebsd1[12]*)
         add_obj ukvm_hv_freebsd.o ukvm_hv_freebsd_x86_64.o ukvm_cpu_x86_64.o
@@ -124,7 +134,7 @@ cat <<EOF> Makefile.ukvm
 all: ukvm-bin
 
 UKVM_CC=${UKVM_CC}
-UKVM_CFLAGS=-Wall -Werror -std=c99 -O2 -g ${UKVM_CFLAGS}
+UKVM_CFLAGS=-Wall -Werror -std=c99 -O2 -ggdb ${UKVM_CFLAGS}
 UKVM_LDFLAGS=${UKVM_LDFLAGS}
 UKVM_LDLIBS=${UKVM_LDLIBS}
 

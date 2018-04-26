@@ -51,7 +51,7 @@ solo5_result_t solo5_block_write(solo5_off_t offset, const uint8_t *buf,
      */
     if ((offset % block_info.block_size != 0) ||
         (offset >= block_info.capacity) ||
-        (size != block_info.block_size))
+        (size < block_info.block_size))
         return SOLO5_R_EINVAL;
 
     volatile struct ukvm_blkwrite wr;
@@ -76,7 +76,7 @@ solo5_result_t solo5_block_read(solo5_off_t offset, uint8_t *buf, size_t size)
      */
     if ((offset % block_info.block_size != 0) ||
         (offset >= block_info.capacity) ||
-        (size != block_info.block_size))
+        (size < block_info.block_size))
         return SOLO5_R_EINVAL;
 
     volatile struct ukvm_blkread rd;

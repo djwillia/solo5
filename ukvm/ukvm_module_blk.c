@@ -35,7 +35,7 @@
 
 static struct ukvm_blkinfo blkinfo;
 static char *diskfile;
-static int diskfd;
+int diskfd;
 
 static void hypercall_blkinfo(struct ukvm_hv *hv, ukvm_gpa_t gpa)
 {
@@ -135,9 +135,14 @@ static char *usage(void)
     return "--disk=IMAGE (file exposed to the unikernel as a raw block device)";
 }
 
+static int get_fd(void)
+{
+    return diskfd;
+}
 struct ukvm_module ukvm_module_blk = {
     .name = "blk",
     .setup = setup,
     .handle_cmdarg = handle_cmdarg,
-    .usage = usage
+    .usage = usage,
+    .get_fd = get_fd,
 };

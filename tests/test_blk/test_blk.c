@@ -102,10 +102,6 @@ int solo5_app_main(const struct solo5_start_info *si __attribute__((unused)))
         return 6;
     if (solo5_block_read(0, buf, bi.block_size - 1) == SOLO5_R_OK)
         return 7;
-    if (solo5_block_write(0, buf, bi.block_size + 1) == SOLO5_R_OK)
-        return 8;
-    if (solo5_block_read(0, buf, bi.block_size + 1) == SOLO5_R_OK)
-        return 9;
 
     /*
      * Check invalid arguments: Should not be able to read or write at offsets

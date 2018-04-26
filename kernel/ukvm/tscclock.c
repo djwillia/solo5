@@ -45,7 +45,7 @@ static uint32_t tsc_mult;
 #endif
 
 /*
- * Beturn monotonic time using TSC clock.
+ * Return monotonic time using TSC clock.
  */
 uint64_t tscclock_monotonic(void)
 {
