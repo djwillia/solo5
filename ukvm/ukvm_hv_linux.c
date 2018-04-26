@@ -241,6 +241,11 @@ static void ukvm_hv_handle_exit(int nr, void *arg)
         ukvm_gpa_t gpa = (ukvm_gpa_t)arg;
         struct ukvm_halt *p = 
             UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_halt));
+
+#ifdef UKVM_MODULE_FTRACE    
+        void ukvm_ftrace_finished(void);
+        ukvm_ftrace_finished();
+#endif
         exit(p->exit_status);
     }
 

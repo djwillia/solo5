@@ -47,6 +47,8 @@
 struct ukvm_ftrace_ctxt {
     int child_ready;
     int parent_ready;
+    int child_exiting;
+    int parent_exiting;
 };
 
 struct ftrace {
@@ -151,10 +153,21 @@ void ukvm_ftrace_ready(void)
         __asm__ __volatile__("" ::: "memory");
 }
 
+void ukvm_ftrace_signal(void)
+{
+    if (!use_ftrace)
+        return;
+    shared->child_exiting = 1;
+}
 void ukvm_ftrace_finished(void)
 {
     if (!use_ftrace)
         return;
+
+    shared->child_exiting = 1;
+    while(!shared->parent_exiting)
+        __asm__ __volatile__("" ::: "memory");
+    
     /* child is now exiting */
     _exit(0);
 }
@@ -177,6 +190,8 @@ static int setup(struct ukvm_hv *hv)
         OUT(o0, "bad mmap result\n");
     shared->child_ready = 0;
     shared->parent_ready = 0;
+    shared->child_exiting = 0;
+    shared->parent_exiting = 0;
     
     pid = fork();
     if (pid == 0)
@@ -230,7 +245,9 @@ static int setup(struct ukvm_hv *hv)
     
     shared->parent_ready = 1;
     
-    waitpid(pid, &ret, 0);
+    /* wait for child to be exiting */
+    while(!shared->child_exiting)
+        usleep(10);
 
     if (FTRACE_WRITE(tracing_on, "0"))
         OUT(o8, "couldn't disable tracing\n");
@@ -239,6 +256,8 @@ static int setup(struct ukvm_hv *hv)
         OUT(o8, "couldn't extract trace\n");
     
     ret = UKVM_FTRACE_PARENT;
+
+    shared->parent_exiting = 1;
     
  o8:
     FTRACE_CLOSE(trace_options);
