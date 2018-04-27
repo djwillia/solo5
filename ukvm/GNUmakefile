@@ -20,7 +20,7 @@
 # configured compiles correctly.
 
 .PHONY: all clean
-all: ukvm-bin
+all: ukvm-bin.seccomp
 
 Makefile.ukvm: ukvm-configure
 	./ukvm-configure . blk net gdb ftrace

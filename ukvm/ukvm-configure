@@ -86,7 +86,7 @@ add_module ()
 }
 
 UKVM_CFLAGS=
-UKVM_LDFLAGS="-T ${UKVM_SRC}/ukvm.lds -z execstack"
+UKVM_LDFLAGS=
 UKVM_LDLIBS=
 UKVM_HEADERS=
 UKVM_OBJS=
@@ -105,11 +105,8 @@ TARGET=$(${UKVM_CC} -dumpmachine)
     die "Error running '${UKVM_CC} -dumpmachine', is your compiler working?"
 case ${TARGET} in
     x86_64-*linux*)
-        #add_obj ukvm_hv_kvm.o ukvm_hv_kvm_x86_64.o ukvm_cpu_x86_64.o
-        #add_header ukvm_hv_kvm.h ukvm_cpu_x86_64.h
-        add_obj ukvm_hv_linux.o ukvm_syscall-reporter.o ukvm_cpu_x86_64.o
-        add_header ukvm_hv_linux.h seccomp-bpf.h
-        add_ldlib -lseccomp
+        add_obj ukvm_hv_kvm.o ukvm_hv_kvm_x86_64.o ukvm_cpu_x86_64.o
+        add_header ukvm_hv_kvm.h ukvm_cpu_x86_64.h
         ;;
     x86_64-*freebsd1[12]*)
         add_obj ukvm_hv_freebsd.o ukvm_hv_freebsd_x86_64.o ukvm_cpu_x86_64.o
@@ -131,7 +128,7 @@ cat <<EOF> Makefile.ukvm
 .BEGIN: ; @echo -e Warning: \$(MAKEFILE) requires GNU make.\\\\nWarning: Attempting to build with \"gmake -f \$(MAKEFILE) \$(.TARGETS)\" for you now. && gmake -f \$(MAKEFILE) \$(.TARGETS)
 
 .PHONY: all
-all: ukvm-bin
+all: ukvm-bin.seccomp
 
 UKVM_CC=${UKVM_CC}
 UKVM_CFLAGS=-Wall -Werror -std=c99 -O2 -ggdb ${UKVM_CFLAGS}
@@ -141,6 +138,9 @@ UKVM_LDLIBS=${UKVM_LDLIBS}
 UKVM_OBJS=${UKVM_OBJS}
 UKVM_HEADERS=${UKVM_HEADERS}
 
+SECCOMP_OBJS= _build-ukvm/ukvm_core.o _build-ukvm/ukvm_elf.o _build-ukvm/ukvm_main.o _build-ukvm/ukvm_module_blk.o _build-ukvm/ukvm_module_net.o _build-ukvm/ukvm_module_gdb.o _build-ukvm/ukvm_module_ftrace.o _build-ukvm/ukvm_hv_linux.o _build-ukvm/ukvm_syscall-reporter.o _build-ukvm/ukvm_cpu_x86_64.o
+SECCOMP_HEADERS= /home/djwillia/solo5/ukvm/ukvm.h /home/djwillia/solo5/ukvm/ukvm_guest.h /home/djwillia/solo5/ukvm/ukvm_cc.h /home/djwillia/solo5/ukvm/ukvm_hv_linux.h /home/djwillia/solo5/ukvm/seccomp-bpf.h
+
 \$(UKVM_OBJS): \$(UKVM_HEADERS)
 
 _build-ukvm:
@@ -149,11 +149,14 @@ _build-ukvm:
 _build-ukvm/ukvm_%.o: ${UKVM_SRC}/ukvm_%.c \$(MAKEFILE_LIST) | _build-ukvm
 	\$(UKVM_CC) \$(UKVM_CFLAGS) -c \$< -o \$@
 
+ukvm-bin.seccomp: \$(SECCOMP_OBJS) \$(MAKEFILE_LIST)
+	\$(UKVM_CC) -T /home/djwillia/solo5/ukvm/ukvm.lds -z execstack -o \$@ \$(SECCOMP_OBJS) -lseccomp
+
 ukvm-bin: \$(UKVM_OBJS) \$(MAKEFILE_LIST)
 	\$(UKVM_CC) \$(UKVM_LDFLAGS) -o \$@ \$(UKVM_OBJS) \$(UKVM_LDLIBS)
 
 .PHONY: ukvm-clean
 ukvm-clean:
 	rm -rf _build-ukvm
-	rm -f ukvm-bin
+	rm -f ukvm-bin.seccomp ukvm-bin
 EOF
