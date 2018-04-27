@@ -30,6 +30,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include "ukvm.h"
 
@@ -40,15 +41,15 @@
 #define OUT(l, x...)                            \
     do {                                        \
         printf(x);                              \
-        ret = UKVM_FTRACE_ERROR;                \
+        ret = -1;                               \
         goto l;                                 \
     } while(0)
 
 struct ukvm_ftrace_ctxt {
-    int child_ready;
-    int parent_ready;
-    int child_exiting;
-    int parent_exiting;
+    int uni_ready;
+    int trace_ready;
+    int uni_exiting;
+    int trace_exiting;
 };
 
 struct ftrace {
@@ -57,12 +58,6 @@ struct ftrace {
     int current_tracer;
     int set_ftrace_pid;
     int trace_options;
-};
-
-enum ukvm_ftrace_error {
-    UKVM_FTRACE_CHILD = 0,
-    UKVM_FTRACE_PARENT,
-    UKVM_FTRACE_ERROR,
 };
 
 static struct ftrace ftrace;
@@ -147,10 +142,10 @@ void ukvm_ftrace_ready(void)
         return;
     /*
      * Note: To ensure a clean trace, there should be no more syscalls
-     * after setting child_ready! 
+     * after setting uni_ready! 
      */
-    shared->child_ready = 1;  
-    while (!shared->parent_ready)
+    shared->uni_ready = 1;  
+    while (!shared->trace_ready)
         __asm__ __volatile__("" ::: "memory");
 }
 
@@ -158,25 +153,25 @@ void ukvm_ftrace_signal(void)
 {
     if (!use_ftrace)
         return;
-    shared->child_exiting = 1;
+    shared->uni_exiting = 1;
 }
 void ukvm_ftrace_finished(void)
 {
     if (!use_ftrace)
         return;
 
-    shared->child_exiting = 1;
-    while(!shared->parent_exiting)
+    shared->uni_exiting = 1;
+    while(!shared->trace_exiting)
         __asm__ __volatile__("" ::: "memory");
     
-    /* child is now exiting */
+    /* I am the unikernel and I am now exiting. */
     _exit(0);
 }
 
 static int setup(struct ukvm_hv *hv)
 {
-    pid_t pid;
-    int ret;
+    pid_t pid_trace, pid_uni;
+    int ret = -1;
     char *pidbuf;
 
     if (!use_ftrace)
@@ -189,24 +184,31 @@ static int setup(struct ukvm_hv *hv)
                                              0, 0);
     if (shared == MAP_FAILED)
         OUT(o0, "bad mmap result\n");
-    shared->child_ready = 0;
-    shared->parent_ready = 0;
-    shared->child_exiting = 0;
-    shared->parent_exiting = 0;
-    
-    pid = fork();
-    if (pid == 0)
-        return UKVM_FTRACE_CHILD;
+    shared->uni_ready = 0;
+    shared->trace_ready = 0;
+    shared->uni_exiting = 0;
+    shared->trace_exiting = 0;
 
-    /* wait for child to get ready */
-    while(!shared->child_ready)
-        usleep(10);
-    
-    if (pid < 0)
-        OUT(o1, "bad fork result %d", pid);
-    if (asprintf(&pidbuf, "%d", pid) < 0)
+    pid_uni = getpid();
+    pid_trace = fork();
+    /* The parent (not the child) must be the one to continue
+     * unikernel setup and execution because KVM ioctls do not work in
+     * the child */
+    if (pid_trace > 0) 
+        return 0;
+
+    if (pid_trace < 0)
+        OUT(o1, "bad fork result %d", pid_trace);
+    if (asprintf(&pidbuf, "%d", pid_uni) < 0)
         OUT(o2, "couldn't asprintf");
 
+    /* The child will do the tracing */
+    assert(pid_trace == 0);
+    
+    /* wait for unikernel to get ready */
+    while(!shared->uni_ready)
+        usleep(10);
+    
     if (FTRACE_OPEN(trace))
         OUT(o3, "couldn't open trace\n");
     if (FTRACE_OPEN(current_tracer))
@@ -244,10 +246,10 @@ static int setup(struct ukvm_hv *hv)
     if (FTRACE_WRITE(tracing_on, "1"))
         OUT(o8, "couldn't enable tracing\n");
     
-    shared->parent_ready = 1;
+    shared->trace_ready = 1;
     
-    /* wait for child to be exiting */
-    while(!shared->child_exiting)
+    /* wait for unikernel to be exiting */
+    while(!shared->uni_exiting)
         usleep(10);
 
     if (FTRACE_WRITE(tracing_on, "0"))
@@ -256,9 +258,8 @@ static int setup(struct ukvm_hv *hv)
     if (extract_trace(pidbuf))
         OUT(o8, "couldn't extract trace\n");
     
-    ret = UKVM_FTRACE_PARENT;
-
-    shared->parent_exiting = 1;
+    ret = 0;
+    shared->trace_exiting = 1;
     
  o8:
     FTRACE_CLOSE(trace_options);
@@ -273,12 +274,14 @@ static int setup(struct ukvm_hv *hv)
  o3:
     free(pidbuf);
  o2:
-    kill(pid, SIGKILL);
+    kill(pid_uni, SIGKILL);
  o1:
     munmap(shared, sizeof(struct ukvm_ftrace_ctxt));
  o0:
-    if (ret == UKVM_FTRACE_PARENT)
+    if (ret == 0) {
+        /* I am the tracer and I am now exiting. */
         exit(0);
+    }
     return ret;
 }
 
