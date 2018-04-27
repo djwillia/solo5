@@ -54,6 +54,9 @@ struct ukvm_module *ukvm_core_modules[] = {
 #ifdef UKVM_MODULE_GDB
     &ukvm_module_gdb,
 #endif
+#ifdef UKVM_MODULE_FTRACE
+    &ukvm_module_ftrace, /* ftrace must be the last module */
+#endif
     NULL,
 };
 #define NUM_MODULES ((sizeof ukvm_core_modules / sizeof (struct ukvm_module *)) - 1)

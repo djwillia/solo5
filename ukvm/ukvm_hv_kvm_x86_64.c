@@ -155,6 +155,11 @@ int ukvm_hv_vcpu_loop(struct ukvm_hv *hv)
     struct ukvm_hvb *hvb = hv->b;
     int ret;
 
+#ifdef UKVM_MODULE_FTRACE    
+    void ukvm_ftrace_ready(void);
+    ukvm_ftrace_ready();
+#endif
+
     while (1) {
         ret = ioctl(hvb->vcpufd, KVM_RUN, NULL);
         if (ret == -1 && errno == EINTR)
@@ -197,6 +202,11 @@ int ukvm_hv_vcpu_loop(struct ukvm_hv *hv)
                     *(uint32_t *)((uint8_t *)run + run->io.data_offset);
                 struct ukvm_halt *p =
                     UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_halt));
+
+#ifdef UKVM_MODULE_FTRACE    
+                void ukvm_ftrace_finished(void);
+                ukvm_ftrace_finished();
+#endif
                 return p->exit_status;
             }
 
@@ -228,4 +238,10 @@ int ukvm_hv_vcpu_loop(struct ukvm_hv *hv)
         }
         } /* switch(run->exit_reason) */
     }
+
+#ifdef UKVM_MODULE_FTRACE    
+    void ukvm_ftrace_finished(void);
+    ukvm_ftrace_finished();
+#endif
+
 }
