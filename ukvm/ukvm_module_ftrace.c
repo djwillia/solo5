@@ -31,6 +31,7 @@
 #include <time.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <pthread.h>
 
 #include "ukvm.h"
 
@@ -103,6 +104,32 @@ FTRACE_DECLARE(trace_options);
 #define FTRACE_WRITE(f,s) ftrace_write_##f(&ftrace, s)
 #define FTRACE_CLOSE(f) close(ftrace.f);        
 
+#define BUF_SIZE 1024
+static void *extract(void *arg) {
+    int fdin = open ("/sys/kernel/debug/tracing/trace_pipe",
+                     O_RDONLY, S_IWUSR);
+    int fdout = open (outfile,
+                      O_WRONLY | O_CREAT | O_TRUNC, S_IWUSR);
+    while(1){
+        char buf[BUF_SIZE];
+        int len, wlen;
+        len = read(fdin, buf, BUF_SIZE);
+        if (len == 0)
+            continue;
+        if (len < 0) {
+            printf("couldn't read trace %d\n", len);
+            perror("error");
+        }
+        wlen = write(fdout, buf, len);
+        if (wlen < len) {
+            printf("couldn't write trace %d\n", wlen);
+            perror("error");
+        }
+    }
+    return NULL;
+}
+
+#if 0
 static int extract_trace(char *pidbuf) {
     char *extractcmd;
     FILE *f;
@@ -135,6 +162,7 @@ static int extract_trace(char *pidbuf) {
 
     return 0;
 }
+#endif
 
 void ukvm_ftrace_ready(void)
 {
@@ -243,6 +271,9 @@ static int setup(struct ukvm_hv *hv)
     if (FTRACE_WRITE(trace_options, "funcgraph-proc"))
         OUT(o8, "couldn't set trace_options\n");
 
+    pthread_t extractor;
+    pthread_create(&extractor, NULL, extract, NULL);
+
     if (FTRACE_WRITE(tracing_on, "1"))
         OUT(o8, "couldn't enable tracing\n");
     
@@ -255,8 +286,13 @@ static int setup(struct ukvm_hv *hv)
     if (FTRACE_WRITE(tracing_on, "0"))
         OUT(o8, "couldn't disable tracing\n");
 
+#if 0
     if (extract_trace(pidbuf))
         OUT(o8, "couldn't extract trace\n");
+#endif
+
+    printf("Waiting for extractor to finish (extracting to %s)\n", outfile);
+    sleep(5); /* XXX allow extractor to finish */
     
     ret = 0;
     shared->trace_exiting = 1;
