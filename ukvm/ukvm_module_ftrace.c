@@ -177,12 +177,6 @@ void ukvm_ftrace_ready(void)
         __asm__ __volatile__("" ::: "memory");
 }
 
-void ukvm_ftrace_signal(void)
-{
-    if (!use_ftrace)
-        return;
-    shared->uni_exiting = 1;
-}
 void ukvm_ftrace_finished(void)
 {
     if (!use_ftrace)
@@ -193,7 +187,11 @@ void ukvm_ftrace_finished(void)
         __asm__ __volatile__("" ::: "memory");
     
     /* I am the unikernel and I am now exiting. */
-    _exit(0);
+}
+
+static void sig_handler(int signo)
+{
+    printf(" Exiting on signal %d\n", signo);
 }
 
 static int setup(struct ukvm_hv *hv)
@@ -232,6 +230,15 @@ static int setup(struct ukvm_hv *hv)
 
     /* The child will do the tracing */
     assert(pid_trace == 0);
+
+    struct sigaction sa;
+    memset (&sa, 0, sizeof (struct sigaction));
+    sa.sa_handler = sig_handler;
+    sigfillset(&sa.sa_mask);
+    if (sigaction(SIGINT, &sa, NULL) == -1)
+        err(1, "Could not install signal handler");
+    if (sigaction(SIGTERM, &sa, NULL) == -1)
+        err(1, "Could not install signal handler");
     
     /* wait for unikernel to get ready */
     while(!shared->uni_ready)

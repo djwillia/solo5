@@ -84,9 +84,8 @@ static int handle_cmdarg(char *cmdarg)
 static void sig_handler(int signo)
 {
 #ifdef UKVM_MODULE_FTRACE    
-    void ukvm_ftrace_signal(void);
-    ukvm_ftrace_signal();
-    return;
+    void ukvm_ftrace_finished(void);
+    ukvm_ftrace_finished();
 #endif
 
     errx(1, "Exiting on signal %d", signo);
