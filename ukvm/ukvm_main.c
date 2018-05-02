@@ -87,7 +87,7 @@ static void sig_handler(int signo)
     void ukvm_ftrace_finished(void);
     ukvm_ftrace_finished();
 #endif
-
+    
     errx(1, "Exiting on signal %d", signo);
 }
 

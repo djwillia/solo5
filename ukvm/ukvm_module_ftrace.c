@@ -32,6 +32,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <pthread.h>
+#include <errno.h>
 
 #include "ukvm.h"
 
@@ -106,26 +107,34 @@ FTRACE_DECLARE(trace_options);
 
 #define BUF_SIZE 1024
 static void *extract(void *arg) {
-    int fdin = open ("/sys/kernel/debug/tracing/trace_pipe",
-                     O_RDONLY, S_IWUSR);
-    int fdout = open (outfile,
-                      O_WRONLY | O_CREAT | O_TRUNC, S_IWUSR);
-    while(1){
+    int fdin = open("/sys/kernel/debug/tracing/trace_pipe",
+                    O_RDONLY, S_IWUSR);
+    int fdout = open(outfile,
+                     O_WRONLY | O_CREAT | O_TRUNC, S_IWUSR);
+
+    while(true){
         char buf[BUF_SIZE];
         int len, wlen;
         len = read(fdin, buf, BUF_SIZE);
-        if (len == 0)
+
+        if (len == 0) {
+            if (shared->uni_exiting)
+                break; /* we've got all the trace */
             continue;
+        }
         if (len < 0) {
             printf("couldn't read trace %d\n", len);
             perror("error");
+            break;
         }
         wlen = write(fdout, buf, len);
         if (wlen < len) {
             printf("couldn't write trace %d\n", wlen);
             perror("error");
+            break;
         }
     }
+
     return NULL;
 }
 
@@ -191,7 +200,7 @@ void ukvm_ftrace_finished(void)
 
 static void sig_handler(int signo)
 {
-    printf(" Exiting on signal %d\n", signo);
+    /* do nothing, the other process will start the exit procedures */
 }
 
 static int setup(struct ukvm_hv *hv)
@@ -299,8 +308,7 @@ static int setup(struct ukvm_hv *hv)
 #endif
 
     printf("Waiting for extractor to finish (extracting to %s)\n", outfile);
-    sleep(5); /* XXX allow extractor to finish */
-    
+    pthread_join(extractor, NULL);
     ret = 0;
     shared->trace_exiting = 1;
     
