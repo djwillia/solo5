@@ -107,33 +107,35 @@ FTRACE_DECLARE(trace_options);
 
 #define BUF_SIZE 1024
 static void *extract(void *arg) {
-    int fdin = open("/sys/kernel/debug/tracing/trace_pipe",
-                    O_RDONLY, S_IWUSR);
-    int fdout = open(outfile,
-                     O_WRONLY | O_CREAT | O_TRUNC, S_IWUSR);
+    FILE* fdin = fopen("/sys/kernel/debug/tracing/trace_pipe", "r");
+    FILE *fdout = fopen(outfile, "w+");
 
     while(true){
         char buf[BUF_SIZE];
         int len, wlen;
-        len = read(fdin, buf, BUF_SIZE);
+        len = fread(buf, 1, BUF_SIZE, fdin);
 
         if (len == 0) {
             if (shared->uni_exiting)
                 break; /* we've got all the trace */
             continue;
         }
-        if (len < 0) {
-            printf("couldn't read trace %d\n", len);
-            perror("error");
-            break;
+#if 0
+        else {
+            if (strstr(buf, "LOST"))
+                printf("saw loss\n");
         }
-        wlen = write(fdout, buf, len);
+#endif        
+#if 1
+        wlen = fwrite(buf, 1, len, fdout);
         if (wlen < len) {
             printf("couldn't write trace %d\n", wlen);
             perror("error");
             break;
         }
+#endif
     }
+    
 
     return NULL;
 }
@@ -269,11 +271,20 @@ static int setup(struct ukvm_hv *hv)
     if (FTRACE_WRITE(trace, " "))
         OUT(o8, "couldn't clear trace\n");
     if (FTRACE_WRITE(current_tracer, "function_graph"))
+    //if (FTRACE_WRITE(current_tracer, "function"))
         OUT(o8, "couldn't set function_graph tracer\n");
     if (FTRACE_WRITE(set_ftrace_pid, " "))
         OUT(o8, "couldn't set pid\n");
     if (FTRACE_WRITE(set_ftrace_pid, pidbuf))
         OUT(o8, "couldn't set pid\n");
+
+    if (FTRACE_WRITE(trace_options, "noprint-parent"))
+        OUT(o8, "couldn't set trace_options\n");
+    if (FTRACE_WRITE(trace_options, "noirq-info"))
+        OUT(o8, "couldn't set trace_options\n");
+    if (FTRACE_WRITE(trace_options, "nocontext-info"))
+        OUT(o8, "couldn't set trace_options\n");
+#if 1
     if (FTRACE_WRITE(trace_options, "nofuncgraph-irqs"))
         OUT(o8, "couldn't set trace_options\n");
     if (FTRACE_WRITE(trace_options, "nofuncgraph-overhead"))
@@ -286,7 +297,8 @@ static int setup(struct ukvm_hv *hv)
         OUT(o8, "couldn't set trace_options\n");
     if (FTRACE_WRITE(trace_options, "funcgraph-proc"))
         OUT(o8, "couldn't set trace_options\n");
-
+#endif
+    
     pthread_t extractor;
     pthread_create(&extractor, NULL, extract, NULL);
 
