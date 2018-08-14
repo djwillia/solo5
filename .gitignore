@@ -12,3 +12,13 @@ tests/*/ukvm-bin
 ukvm/Makefile.ukvm
 ukvm/_build_ukvm/
 ukvm/ukvm-bin
+solo5_mod/.cache.mk
+solo5_mod/.solo5_mod.ko.cmd
+solo5_mod/.solo5_mod.mod.o.cmd
+solo5_mod/.solo5_mod.o.cmd
+solo5_mod/.tmp_versions/
+solo5_mod/Module.symvers
+solo5_mod/modules.order
+solo5_mod/solo5_mod.ko
+solo5_mod/solo5_mod.mod.c
+solo5_mod/solo5_test

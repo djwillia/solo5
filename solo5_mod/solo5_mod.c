@@ -5,7 +5,7 @@
 #include <linux/uaccess.h>
 #include <linux/kallsyms.h>
 
-#include "ukvm_guest.h"
+#include "../ukvm/ukvm_guest.h"
 
 /* linux device stuff */
 MODULE_LICENSE("GPL");

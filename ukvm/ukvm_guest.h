@@ -32,7 +32,7 @@
 #define UKVM_GUEST_H
 
 #include <stddef.h>
-#include <stdint.h>
+//#include <stdint.h>
 #define __UKVM_LINUX__
 
 
