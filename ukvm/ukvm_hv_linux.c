@@ -204,8 +204,9 @@ int ukvm_hv_vcpu_loop(struct ukvm_hv *hv)
     void (*_start)(void *) = (void (*)(void *))hv->b->entry;
     loop_hv = hv;
 
-    install_syscall_reporter();
-    install_syscall_filter();
+    //install_syscall_reporter();
+    //install_syscall_filter();
+    printf("NOT INSTALLING SECCOMP FILTER\n");
     /* prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT); */
 
 #ifdef UKVM_MODULE_FTRACE    

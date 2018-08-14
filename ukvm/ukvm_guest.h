@@ -281,4 +281,9 @@ struct ukvm_halt {
     int exit_status;
 };
 
+
+#define UKVM_IOCTL_PUTS _IOW('u', UKVM_HYPERCALL_PUTS, struct ukvm_puts *)
+#define UKVM_IOCTL_HALT _IOW('u', UKVM_HYPERCALL_HALT, struct ukvm_halt *)
+#define UKVM_IOCTL_WALLTIME _IOR('u', UKVM_HYPERCALL_WALLTIME, struct ukvm_walltime *)
+
 #endif /* UKVM_GUEST_H */

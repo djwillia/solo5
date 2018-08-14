@@ -38,9 +38,12 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
 
 #include "ukvm.h"
 
+static int solo5_fd;
 struct ukvm_module ukvm_module_core;
 
 struct ukvm_module *ukvm_core_modules[] = {
@@ -89,6 +92,7 @@ int ukvm_core_register_vmexit(ukvm_vmexit_fn_t fn)
 
 static void hypercall_walltime(struct ukvm_hv *hv, ukvm_gpa_t gpa)
 {
+#if 0
     struct ukvm_walltime *t =
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_walltime));
     struct timespec ts;
@@ -96,14 +100,21 @@ static void hypercall_walltime(struct ukvm_hv *hv, ukvm_gpa_t gpa)
     int rc = clock_gettime(CLOCK_REALTIME, &ts);
     assert(rc == 0);
     t->nsecs = (ts.tv_sec * 1000000000ULL) + ts.tv_nsec;
+#endif
+    int rc = ioctl(solo5_fd, UKVM_IOCTL_WALLTIME, gpa);
+    assert(rc == 0);
 }
 
 static void hypercall_puts(struct ukvm_hv *hv, ukvm_gpa_t gpa)
 {
+#if 0
     struct ukvm_puts *p =
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_puts));
     int rc = write(1, UKVM_CHECKED_GPA_P(hv, p->data, p->len), p->len);
     assert(rc >= 0);
+#endif
+    int rc = ioctl(solo5_fd, UKVM_IOCTL_PUTS, gpa);
+    assert(rc == 0);
 }
 
 struct pollfd pollfds[NUM_MODULES];
@@ -144,6 +155,12 @@ static int setup(struct ukvm_hv *hv)
                 hypercall_puts) == 0);
     assert(ukvm_core_register_hypercall(UKVM_HYPERCALL_POLL,
                 hypercall_poll) == 0);
+
+    solo5_fd = open("/dev/solo5", O_RDWR);
+    if (solo5_fd < 0) {
+        perror("couldn't open solo5 device!\n");
+        return errno;
+    }
 
     /*
      * XXX: This needs documenting / coordination with the top-level caller.
