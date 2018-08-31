@@ -92,7 +92,6 @@ int ukvm_core_register_vmexit(ukvm_vmexit_fn_t fn)
 
 static void hypercall_walltime(struct ukvm_hv *hv, ukvm_gpa_t gpa)
 {
-#if 0
     struct ukvm_walltime *t =
         UKVM_CHECKED_GPA_P(hv, gpa, sizeof (struct ukvm_walltime));
     struct timespec ts;
@@ -100,9 +99,10 @@ static void hypercall_walltime(struct ukvm_hv *hv, ukvm_gpa_t gpa)
     int rc = clock_gettime(CLOCK_REALTIME, &ts);
     assert(rc == 0);
     t->nsecs = (ts.tv_sec * 1000000000ULL) + ts.tv_nsec;
-#endif
+#if 0
     int rc = ioctl(solo5_fd, UKVM_IOCTL_WALLTIME, gpa);
     assert(rc == 0);
+#endif
 }
 
 static void hypercall_puts(struct ukvm_hv *hv, ukvm_gpa_t gpa)

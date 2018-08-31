@@ -15,6 +15,48 @@ static int solo5_devnum;
 static struct class *solo5_devclass;
 static struct device *solo5_dev;
 
+#define COM1 0x3f8
+#define COM1_DATA   (COM1 + 0)
+#define COM1_INTR   (COM1 + 1)
+#define COM1_CTRL   (COM1 + 3)
+#define COM1_STATUS (COM1 + 5)
+#define COM1_DIV_LO (COM1 + 0)
+#define COM1_DIV_HI (COM1 + 1)
+#define DLAB 0x80
+#define PROT 0x03 /* 8N1 (8 bits, no parity, one stop bit) */
+
+void serial_init(void)
+{
+	outb(0x00, COM1_INTR);      /* Disable all interrupts */
+	outb(DLAB, COM1_CTRL);      /* Enable DLAB (set baud rate divisor) */
+	outb(0x01, COM1_DIV_LO);    /* Set divisor to 1 (lo byte) 115200 baud */
+	outb(0x00, COM1_DIV_HI);    /*                  (hi byte) */
+	outb(PROT, COM1_CTRL);      /* Set 8N1, clear DLAB */
+}
+
+
+static int serial_tx_empty(void)
+{
+	return inb(COM1_STATUS) & 0x20;
+}
+
+static void serial_write(char a)
+{
+    while (!serial_tx_empty())
+        ;
+
+    outb(a, COM1_DATA);
+}
+
+static void serial_putc(char a)
+{
+    if (a == '\n')
+        serial_write('\r');
+    serial_write(a);
+}
+
+
+
 static int solo5_open(struct inode *inode, struct file *f)
 {
     printk("%s\n", __FUNCTION__);
@@ -36,6 +78,7 @@ static ssize_t solo5_write(struct file *f, const char *buf, size_t len, loff_t *
     return -EFAULT;
 }
 
+#if 0
 static long hypercall_puts(unsigned long arg)
 {
     typedef long (*sys_write_fn)(unsigned int, const char __user *, size_t);
@@ -58,6 +101,70 @@ static long hypercall_puts(unsigned long arg)
 
     sys_write_ptr(1, buf, len);
 
+    return 0;
+}
+#endif
+
+#if 0
+static long hypercall_puts_direct(unsigned long arg)
+{
+    typedef int (*log_store_fn)(int, int, int, u64, const char *, u16,
+                                const char *, u16);
+    log_store_fn log_store_ptr;
+    struct ukvm_puts p;
+    const char __user *buf;
+#define MAX_PUTS_LEN 256
+    char tmp[MAX_PUTS_LEN];
+    size_t len, copylen;
+    
+    log_store_ptr = (log_store_fn)kallsyms_lookup_name("log_store");
+    if (log_store_ptr == 0) {
+        pr_err("Unable to find log_store\n");
+        return -EINVAL;
+    }
+
+    if (copy_from_user(&p, (struct ukvm_puts *)arg, sizeof(struct ukvm_puts)))
+        return -EACCES;
+    
+    buf = p.data;
+    len = p.len; /* XXX check this user input!!! */
+    copylen = min((size_t)MAX_PUTS_LEN, len);
+    
+    if (copy_from_user(tmp, buf, copylen))
+        return -EACCES;
+
+    /* static int log_store(int facility=0, int level=LOGLEVEL_DEFAULT,
+       enum log_flags flags=0, u64 ts_nsec=0,
+       const char *dict=NULL, u16 dict_len=0,
+       const char *text, u16 text_len)
+    */
+    log_store_ptr(0, LOGLEVEL_DEFAULT, 0, 0, NULL, 0, tmp, copylen);
+
+    return 0;
+}
+#endif
+static long hypercall_puts_direct(unsigned long arg)
+{
+    struct ukvm_puts p;
+    const char __user *buf;
+#define MAX_PUTS_LEN 256
+    char tmp[MAX_PUTS_LEN];
+    size_t len, copylen;
+    int i;
+    
+    if (copy_from_user(&p, (struct ukvm_puts *)arg, sizeof(struct ukvm_puts)))
+        return -EACCES;
+    
+    buf = p.data;
+    len = p.len; /* XXX check this user input!!! */
+    copylen = min((size_t)MAX_PUTS_LEN, len);
+    
+    if (copy_from_user(tmp, buf, copylen))
+        return -EACCES;
+
+    for (i = 0; i < copylen; i++)
+        serial_putc(tmp[i]);
+    
     return 0;
 }
 
@@ -118,7 +225,7 @@ static long solo5_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
         break;
 #endif        
     case UKVM_IOCTL_PUTS:
-        return hypercall_puts(arg);
+        return hypercall_puts_direct(arg);
         break;
     case UKVM_IOCTL_HALT:
         return hypercall_halt(arg);
@@ -149,6 +256,12 @@ static struct file_operations solo5_fops =
 static int __init solo5_mod_init(void)
 {
     int ret = 0;
+
+    {
+        int i;
+        for (i = 0; i < 10000; i++)
+            serial_putc('D');
+    }
 
     printk(KERN_INFO "Solo5: module initializing.\n");
 

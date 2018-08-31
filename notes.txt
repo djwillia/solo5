@@ -1,0 +1,201 @@
+Strangely, log-store has less traced functions, probably because of an
+asychronous thread not being traced.
+
+hypercall_puts:
+
+424748.497203 |   0) ukvm-bi-12593  | do_syscall_64() {
+424748.497204 |   0) ukvm-bi-12593  |   SyS_ioctl() {
+424748.497204 |   0) ukvm-bi-12593  |     __fdget() {
+424748.497204 |   0) ukvm-bi-12593  |       __fget_light();
+424748.497205 |   0) ukvm-bi-12593  |     }
+424748.497205 |   0) ukvm-bi-12593  |     security_file_ioctl();
+424748.497206 |   0) ukvm-bi-12593  |     do_vfs_ioctl() {
+424748.497206 |   0) ukvm-bi-12593  |       solo5_ioctl [solo5_mod]() {
+424748.497206 |   0) ukvm-bi-12593  |         kallsyms_lookup_name() {
+424748.497206 |   0) ukvm-bi-12593  |           kallsyms_expand_symbol.constprop.1();
+424748.502859 |   0) ukvm-bi-12593  |         }
+424748.502859 |   0) ukvm-bi-12593  |         SyS_write() {
+424748.502859 |   0) ukvm-bi-12593  |           __fdget_pos() {
+424748.502860 |   0) ukvm-bi-12593  |             __fget_light();
+424748.502860 |   0) ukvm-bi-12593  |           }
+424748.502860 |   0) ukvm-bi-12593  |           vfs_write() {
+424748.502860 |   0) ukvm-bi-12593  |             rw_verify_area() {
+424748.502861 |   0) ukvm-bi-12593  |               security_file_permission() {
+424748.502861 |   0) ukvm-bi-12593  |                 apparmor_file_permission() {
+424748.502861 |   0) ukvm-bi-12593  |                   common_file_perm() {
+424748.502861 |   0) ukvm-bi-12593  |                     aa_file_perm();
+424748.502862 |   0) ukvm-bi-12593  |                   }
+424748.502862 |   0) ukvm-bi-12593  |                 }
+424748.502862 |   0) ukvm-bi-12593  |               }
+424748.502862 |   0) ukvm-bi-12593  |             }
+424748.502862 |   0) ukvm-bi-12593  |             __vfs_write() {
+424748.502863 |   0) ukvm-bi-12593  |               tty_write() {
+424748.502863 |   0) ukvm-bi-12593  |                 tty_paranoia_check();
+424748.502863 |   0) ukvm-bi-12593  |                 tty_ldisc_ref_wait() {
+424748.502863 |   0) ukvm-bi-12593  |                   ldsem_down_read() {
+424748.502864 |   0) ukvm-bi-12593  |                     _cond_resched() {
+424748.502864 |   0) ukvm-bi-12593  |                       rcu_all_qs();
+424748.502864 |   0) ukvm-bi-12593  |                     }
+424748.502864 |   0) ukvm-bi-12593  |                   }
+424748.502864 |   0) ukvm-bi-12593  |                 }
+424748.502865 |   0) ukvm-bi-12593  |                 tty_write_lock() {
+424748.502865 |   0) ukvm-bi-12593  |                   mutex_trylock();
+424748.502865 |   0) ukvm-bi-12593  |                 }
+424748.502865 |   0) ukvm-bi-12593  |                 __check_object_size() {
+424748.502866 |   0) ukvm-bi-12593  |                   __virt_addr_valid();
+424748.502866 |   0) ukvm-bi-12593  |                   __check_heap_object();
+424748.502866 |   0) ukvm-bi-12593  |                   check_stack_object();
+424748.502867 |   0) ukvm-bi-12593  |                 }
+424748.502867 |   0) ukvm-bi-12593  |                 n_tty_write() {
+424748.502867 |   0) ukvm-bi-12593  |                   down_read() {
+424748.502868 |   0) ukvm-bi-12593  |                     _cond_resched() {
+424748.502868 |   0) ukvm-bi-12593  |                       rcu_all_qs();
+424748.502868 |   0) ukvm-bi-12593  |                     }
+424748.502868 |   0) ukvm-bi-12593  |                   }
+424748.502868 |   0) ukvm-bi-12593  |                   process_echoes();
+424748.502869 |   0) ukvm-bi-12593  |                   add_wait_queue() {
+424748.502869 |   0) ukvm-bi-12593  |                     _raw_spin_lock_irqsave();
+424748.502869 |   0) ukvm-bi-12593  |                     _raw_spin_unlock_irqrestore();
+424748.502870 |   0) ukvm-bi-12593  |                   }
+424748.502870 |   0) ukvm-bi-12593  |                   tty_hung_up_p();
+424748.502870 |   0) ukvm-bi-12593  |                   mutex_lock() {
+424748.502871 |   0) ukvm-bi-12593  |                     _cond_resched() {
+424748.502871 |   0) ukvm-bi-12593  |                       rcu_all_qs();
+424748.502871 |   0) ukvm-bi-12593  |                     }
+424748.502871 |   0) ukvm-bi-12593  |                   }
+424748.502871 |   0) ukvm-bi-12593  |                   tty_write_room() {
+424748.502872 |   0) ukvm-bi-12593  |                     pty_write_room() {
+424748.502872 |   0) ukvm-bi-12593  |                       tty_buffer_space_avail();
+424748.502872 |   0) ukvm-bi-12593  |                     }
+424748.502872 |   0) ukvm-bi-12593  |                   }
+424748.502873 |   0) ukvm-bi-12593  |                   pty_write() {
+424748.502873 |   0) ukvm-bi-12593  |                     tty_insert_flip_string_fixed_flag() {
+424748.502873 |   0) ukvm-bi-12593  |                       __tty_buffer_request_room();
+424748.502873 |   0) ukvm-bi-12593  |                     }
+424748.502874 |   0) ukvm-bi-12593  |                     tty_flip_buffer_push() {
+424748.502874 |   0) ukvm-bi-12593  |                       queue_work_on() {
+424748.502874 |   0) ukvm-bi-12593  |                         __queue_work() {
+424748.502874 |   0) ukvm-bi-12593  |                           get_work_pool();
+424748.502875 |   0) ukvm-bi-12593  |                           _raw_spin_lock();
+424748.502875 |   0) ukvm-bi-12593  |                           insert_work() {
+424748.502875 |   0) ukvm-bi-12593  |                             get_pwq.isra.19();
+424748.502875 |   0) ukvm-bi-12593  |                             wake_up_process() {
+424748.502876 |   0) ukvm-bi-12593  |                               try_to_wake_up() {
+424748.502876 |   0) ukvm-bi-12593  |                                 _raw_spin_lock_irqsave();
+424748.502876 |   0) ukvm-bi-12593  |                                 select_task_rq_fair() {
+424748.502876 |   0) ukvm-bi-12593  |                                   select_idle_sibling() {
+424748.502877 |   0) ukvm-bi-12593  |                                     idle_cpu();
+424748.502877 |   0) ukvm-bi-12593  |                                   }
+424748.502877 |   0) ukvm-bi-12593  |                                 }
+424748.502878 |   0) ukvm-bi-12593  |                                 native_smp_send_reschedule() {
+424748.502878 |   0) ukvm-bi-12593  |                                   x2apic_send_IPI();
+424748.502886 |   0) ukvm-bi-12593  |                                 }
+424748.502887 |   0) ukvm-bi-12593  |                                 _raw_spin_unlock_irqrestore();
+424748.502887 |   0) ukvm-bi-12593  |                               }
+424748.502888 |   0) ukvm-bi-12593  |                             }
+424748.502888 |   0) ukvm-bi-12593  |                           }
+424748.502888 |   0) ukvm-bi-12593  |                         }
+424748.502888 |   0) ukvm-bi-12593  |                       }
+424748.502889 |   0) ukvm-bi-12593  |                     }
+424748.502889 |   0) ukvm-bi-12593  |                   }
+424748.502889 |   0) ukvm-bi-12593  |                   mutex_unlock();
+424748.502890 |   0) ukvm-bi-12593  |                   mutex_lock() {
+424748.502890 |   0) ukvm-bi-12593  |                     _cond_resched() {
+424748.502890 |   0) ukvm-bi-12593  |                       rcu_all_qs();
+424748.502891 |   0) ukvm-bi-12593  |                     }
+424748.502891 |   0) ukvm-bi-12593  |                   }
+424748.502891 |   0) ukvm-bi-12593  |                   tty_write_room() {
+424748.502891 |   0) ukvm-bi-12593  |                     pty_write_room() {
+424748.502892 |   0) ukvm-bi-12593  |                       tty_buffer_space_avail();
+424748.502892 |   0) ukvm-bi-12593  |                     }
+424748.502892 |   0) ukvm-bi-12593  |                   }
+424748.502893 |   0) ukvm-bi-12593  |                   do_output_char() {
+424748.502893 |   0) ukvm-bi-12593  |                     pty_write() {
+424748.502893 |   0) ukvm-bi-12593  |                       tty_insert_flip_string_fixed_flag() {
+424748.502894 |   0) ukvm-bi-12593  |                         __tty_buffer_request_room();
+424748.502894 |   0) ukvm-bi-12593  |                       }
+424748.502894 |   0) ukvm-bi-12593  |                       tty_flip_buffer_push() {
+424748.502895 |   0) ukvm-bi-12593  |                         queue_work_on();
+424748.502895 |   0) ukvm-bi-12593  |                       }
+424748.502895 |   0) ukvm-bi-12593  |                     }
+424748.502896 |   0) ukvm-bi-12593  |                   }
+424748.502896 |   0) ukvm-bi-12593  |                   mutex_unlock();
+424748.502896 |   0) ukvm-bi-12593  |                   remove_wait_queue() {
+424748.502897 |   0) ukvm-bi-12593  |                     _raw_spin_lock_irqsave();
+424748.502897 |   0) ukvm-bi-12593  |                     _raw_spin_unlock_irqrestore();
+424748.502898 |   0) ukvm-bi-12593  |                   }
+424748.502898 |   0) ukvm-bi-12593  |                   up_read();
+424748.502898 |   0) ukvm-bi-12593  |                 }
+424748.502899 |   0) ukvm-bi-12593  |                 get_seconds();
+424748.502899 |   0) ukvm-bi-12593  |                 tty_write_unlock() {
+424748.502899 |   0) ukvm-bi-12593  |                   mutex_unlock();
+424748.502900 |   0) ukvm-bi-12593  |                   __wake_up() {
+424748.502900 |   0) ukvm-bi-12593  |                     __wake_up_common_lock() {
+424748.502900 |   0) ukvm-bi-12593  |                       _raw_spin_lock_irqsave();
+424748.502901 |   0) ukvm-bi-12593  |                       __wake_up_common();
+424748.502901 |   0) ukvm-bi-12593  |                       _raw_spin_unlock_irqrestore();
+424748.502902 |   0) ukvm-bi-12593  |                     }
+424748.502902 |   0) ukvm-bi-12593  |                   }
+424748.502902 |   0) ukvm-bi-12593  |                 }
+424748.502902 |   0) ukvm-bi-12593  |                 tty_ldisc_deref() {
+424748.502903 |   0) ukvm-bi-12593  |                   ldsem_up_read();
+424748.502903 |   0) ukvm-bi-12593  |                 }
+424748.502903 |   0) ukvm-bi-12593  |               }
+424748.502904 |   0) ukvm-bi-12593  |             }
+424748.502904 |   0) ukvm-bi-12593  |             __fsnotify_parent();
+424748.502904 |   0) ukvm-bi-12593  |             fsnotify();
+424748.502905 |   0) ukvm-bi-12593  |           }
+424748.502905 |   0) ukvm-bi-12593  |         }
+424748.502905 |   0) ukvm-bi-12593  |       }
+424748.502906 |   0) ukvm-bi-12593  |     }
+424748.502906 |   0) ukvm-bi-12593  |   }
+424748.502906 |   0) ukvm-bi-12593  | }
+
+hypercall_puts_direct: (log store)
+
+439904.886735 |   2) ukvm-bi-17053  | do_syscall_64() {
+439904.886735 |   2) ukvm-bi-17053  |   SyS_ioctl() {
+439904.886735 |   2) ukvm-bi-17053  |     __fdget() {
+439904.886735 |   2) ukvm-bi-17053  |       __fget_light();
+439904.886736 |   2) ukvm-bi-17053  |     }
+439904.886736 |   2) ukvm-bi-17053  |     security_file_ioctl();
+439904.886736 |   2) ukvm-bi-17053  |     do_vfs_ioctl() {
+439904.886736 |   2) ukvm-bi-17053  |       solo5_ioctl [solo5_mod]() {
+439904.886736 |   2) ukvm-bi-17053  |         hypercall_puts_direct [solo5_mod]() {
+439904.886737 |   2) ukvm-bi-17053  |           kallsyms_lookup_name() {
+439904.886737 |   2) ukvm-bi-17053  |             kallsyms_expand_symbol.constprop.1();
+439904.891789 |   2) ukvm-bi-17053  |           }
+439904.891789 |   2) ukvm-bi-17053  |           __check_object_size() {
+439904.891789 |   2) ukvm-bi-17053  |             __virt_addr_valid();
+439904.891790 |   2) ukvm-bi-17053  |             check_stack_object();
+439904.891790 |   2) ukvm-bi-17053  |           }
+439904.891790 |   2) ukvm-bi-17053  |           log_store() {
+439904.891790 |   2) ukvm-bi-17053  |             log_make_free_space();
+439904.891791 |   2) ukvm-bi-17053  |           }
+439904.891791 |   2) ukvm-bi-17053  |         }
+439904.891791 |   2) ukvm-bi-17053  |       }
+439904.891791 |   2) ukvm-bi-17053  |     }
+439904.891792 |   2) ukvm-bi-17053  |   }
+439904.891792 |   2) ukvm-bi-17053  | }
+
+hypercall_puts_direct: (directly writing to serial)
+  362.037488 |   1)  ukvm-bi-1718  | do_syscall_64() {
+  362.037488 |   1)  ukvm-bi-1718  |   SyS_ioctl() {
+  362.037488 |   1)  ukvm-bi-1718  |     __fdget() {
+  362.037489 |   1)  ukvm-bi-1718  |       __fget_light();
+  362.037489 |   1)  ukvm-bi-1718  |     }
+  362.037489 |   1)  ukvm-bi-1718  |     security_file_ioctl();
+  362.037490 |   1)  ukvm-bi-1718  |     do_vfs_ioctl() {
+  362.037490 |   1)  ukvm-bi-1718  |       solo5_ioctl [solo5_mod]() {
+  362.037490 |   1)  ukvm-bi-1718  |         hypercall_puts_direct [solo5_mod]() {
+  362.037491 |   1)  ukvm-bi-1718  |           __check_object_size() {
+  362.037491 |   1)  ukvm-bi-1718  |             __virt_addr_valid();
+  362.037491 |   1)  ukvm-bi-1718  |             check_stack_object();
+  362.037492 |   1)  ukvm-bi-1718  |           }
+  362.038208 |   1)  ukvm-bi-1718  |         }
+  362.038208 |   1)  ukvm-bi-1718  |       }
+  362.038208 |   1)  ukvm-bi-1718  |     }
+  362.038208 |   1)  ukvm-bi-1718  |   }
+  362.038209 |   1)  ukvm-bi-1718  | }
+
+
