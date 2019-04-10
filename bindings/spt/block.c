@@ -43,6 +43,9 @@ void solo5_block_info(struct solo5_block_info *info)
     info->block_size = block_size;
 }
 
+#define HACKSZ 4096
+uint8_t aligned_hack[HACKSZ] __attribute__((aligned(HACKSZ)));
+
 solo5_result_t solo5_block_read(solo5_off_t offset, uint8_t *buf, size_t size)
 {
     assert(block_fd >= 0);
@@ -58,7 +61,9 @@ solo5_result_t solo5_block_read(solo5_off_t offset, uint8_t *buf, size_t size)
     if(offset > (block_capacity - block_size))
         return SOLO5_R_EINVAL;
 
-    long nbytes = sys_pread64(block_fd, (char *)buf, size, offset);
+    //long nbytes = sys_pread64(block_fd, (char *)buf, size, offset);
+    long nbytes = sys_pread64(block_fd, (char *)aligned_hack, size, offset);
+    memcpy(buf, aligned_hack, HACKSZ);
 
     return (nbytes == (int)size) ? SOLO5_R_OK : SOLO5_R_EUNSPEC;
 }
@@ -79,7 +84,9 @@ solo5_result_t solo5_block_write(solo5_off_t offset, const uint8_t *buf,
     if(offset > (block_capacity - block_size))
         return SOLO5_R_EINVAL;
    
-    long nbytes = sys_pwrite64(block_fd, (const char *)buf, size, offset);
-
+    //long nbytes = sys_pwrite64(block_fd, (const char *)buf, size, offset);
+    memcpy(aligned_hack, buf, HACKSZ);
+    long nbytes = sys_pwrite64(block_fd, (const char *)aligned_hack, size, offset);
+    
     return (nbytes == (int)size) ? SOLO5_R_OK : SOLO5_R_EUNSPEC;
 }

@@ -53,7 +53,7 @@ static int setup(struct spt *spt)
     if (diskfile == NULL)
         return 0; /* not present */
 
-    diskfd = open(diskfile, O_RDWR);
+    diskfd = open(diskfile, O_RDWR | O_DIRECT);
     if (diskfd == -1)
         err(1, "Could not open disk: %s", diskfile);
     off_t capacity = lseek(diskfd, 0, SEEK_END);
@@ -64,7 +64,7 @@ static int setup(struct spt *spt)
                 "in size", diskfile);
 
     spt->bi->blocki.present = 1;
-    spt->bi->blocki.block_size = 512;
+    spt->bi->blocki.block_size = 4096;
     spt->bi->blocki.capacity = capacity;
     spt->bi->blocki.hostfd = diskfd;
 
