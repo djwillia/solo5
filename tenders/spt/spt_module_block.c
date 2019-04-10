@@ -53,6 +53,8 @@ static int setup(struct spt *spt)
     if (diskfile == NULL)
         return 0; /* not present */
 
+    printf("OPENING WITH O_DIRECT YES\n");
+    fflush(stdout);
     diskfd = open(diskfile, O_RDWR | O_DIRECT);
     if (diskfd == -1)
         err(1, "Could not open disk: %s", diskfile);
